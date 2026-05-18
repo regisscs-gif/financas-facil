@@ -832,7 +832,7 @@ async function iniciarDados(){
 
 // Redireciona para a URL correta após login
 function loginGoogle(){
-  var redirectTo = window.location.origin + window.location.pathname;
+  var redirectTo = 'https://regisscs-gif.github.io/financas-facil';
   var url = SUPA_URL+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirectTo);
   window.location.href = url;
 }

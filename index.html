@@ -153,14 +153,36 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">Fixos ativos</div><div id="proj-fix"></div></div>
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">Parcelas futuras</div><div id="proj-fut"></div></div>
   </div>
-  <div class="page" id="pg-cat">
+  <!-- CONFIGURAÇÕES -->
+  <div class="page" id="pg-cfg">
     <div class="card">
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Receita</div><div id="cr"></div>
-      <div style="display:flex;gap:8px;margin-top:10px"><input id="ncr" placeholder="Nova categoria..."><button onclick="addCat('r')" style="background:#06d6a0;border:none;color:#000;padding:9px 14px;border-radius:10px;font-weight:700;cursor:pointer">+</button></div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:14px">⚙️ Ciclo Financeiro</div>
+      <label>Modelo de ciclo</label>
+      <select id="cfg-modelo" onchange="onCfgModelo()">
+        <option value="cal">Mês calendário (dia 1 a 31)</option>
+        <option value="custom">Ciclo personalizado</option>
+      </select>
+      <div id="cfg-dia-wrap" style="display:none;margin-top:10px">
+        <label>Dia de início do ciclo</label>
+        <input id="cfg-dia" type="number" min="1" max="28" placeholder="Ex: 25">
+        <div class="info-box" style="margin-top:8px">💡 Ex: dia 25 → ciclo de Maio = 25/Abr até 24/Mai. O salário recebido no dia 25 já entra no ciclo seguinte.</div>
+      </div>
+      <button class="sbtn" onclick="salvarCfg()">Salvar configurações</button>
     </div>
     <div class="card">
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Despesa</div><div id="ce"></div>
-      <div style="display:flex;gap:8px;margin-top:10px"><input id="nce" placeholder="Nova categoria..."><button onclick="addCat('e')" style="background:#ef476f;border:none;color:#fff;padding:9px 14px;border-radius:10px;font-weight:700;cursor:pointer">+</button></div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:14px">🏷️ Categorias</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Receita</div>
+      <div id="cr"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="ncr" placeholder="Nova categoria...">
+        <button onclick="addCat('r')" style="background:#06d6a0;border:none;color:#000;padding:9px 14px;border-radius:10px;font-weight:700;cursor:pointer">+</button>
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;margin-top:16px">Despesa</div>
+      <div id="ce"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="nce" placeholder="Nova categoria...">
+        <button onclick="addCat('e')" style="background:#ef476f;border:none;color:#fff;padding:9px 14px;border-radius:10px;font-weight:700;cursor:pointer">+</button>
+      </div>
     </div>
   </div>
 
@@ -172,7 +194,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="nb" data-pg="parc"><span>💳</span>Parcelas</button>
     <button class="nb" data-pg="cc"><span>🃏</span>Cartões</button>
     <button class="nb" data-pg="proj"><span>📈</span>Projeção</button>
-  <button class="nb" data-pg="cat"><span>☰</span>Categ.</button>  </nav>
+  <button class="nb" data-pg="cfg"><span>⚙️</span>Config.</button>  </nav>
 </div>
 
 <!-- MODAIS -->
@@ -370,6 +392,7 @@ var db = {
   cartoes:[], ccLancs:[], ccPagamentos:[],
   catsR:['Salário','Freelance','Investimentos','Outros'],
   catsE:['Moradia','Alimentação','Transporte','Saúde','Lazer','Educação','Vestuário','Outros'],
+  cfg:{ modelo:'cal', diaInicio:1 }, // ciclo financeiro
   nid:1, ngid:1, noid:1
 };
 
@@ -390,7 +413,73 @@ function hoje(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+
 function mesKey(m,y){return y+'-'+pad(m+1);}
 function avanca(y,m1,d,j){var dt=new Date(y,m1-1+j,d);return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());}
 
-function fixosVigentes(m,y){
+// ── CICLO FINANCEIRO ─────────────────────────────────────
+// Retorna {ini, fim} do ciclo para um dado índice de ciclo (curM, curY)
+// No modelo calendário: ini=1/m/y, fim=último dia/m/y
+// No modelo custom (diaInicio=25): ciclo "Maio" = 25/abr a 24/mai
+function getCiclo(m, y) {
+  var cfg = db.cfg || {modelo:'cal', diaInicio:1};
+  if (cfg.modelo === 'custom' && cfg.diaInicio > 1) {
+    var d = cfg.diaInicio;
+    // ini: dia d do mês anterior
+    var iniDate = new Date(y, m-1, d); // m-1 porque m já é 0-based em JS quando passamos direto
+    // fim: dia d-1 do mês atual
+    var fimDate = new Date(y, m, d-1);
+    return { ini: iniDate, fim: fimDate };
+  } else {
+    var ini2 = new Date(y, m, 1);
+    var fim2 = new Date(y, m+1, 0); // último dia do mês
+    return { ini: ini2, fim: fim2 };
+  }
+}
+
+// Label do ciclo atual
+function getCicloLabel(m, y) {
+  var cfg = db.cfg || {modelo:'cal', diaInicio:1};
+  if (cfg.modelo === 'custom' && cfg.diaInicio > 1) {
+    var c = getCiclo(m, y);
+    var ini = c.ini, fim = c.fim;
+    return pad(ini.getDate())+' '+MABR[ini.getMonth()]+' – '+pad(fim.getDate())+' '+MABR[fim.getMonth()]+' '+fim.getFullYear();
+  }
+  return MESES[m]+' '+y;
+}
+
+// Verifica se uma data (string yyyy-mm-dd) pertence ao ciclo m/y
+function pertenceCiclo(dataStr, m, y) {
+  var c = getCiclo(m, y);
+  var d = new Date(dataStr + 'T12:00:00');
+  return d >= c.ini && d <= c.fim;
+}
+
+// Navegar ciclos
+function prevCiclo() {
+  if (curM === 0) { curM = 11; curY--; } else curM--;
+  render();
+}
+function nextCiclo() {
+  if (curM === 11) { curM = 0; curY++; } else curM++;
+  render();
+}
+
+// ── CONFIGURAÇÕES ────────────────────────────────────────
+function onCfgModelo() {
+  var v = document.getElementById('cfg-modelo').value;
+  document.getElementById('cfg-dia-wrap').style.display = v === 'custom' ? 'block' : 'none';
+}
+function salvarCfg() {
+  var modelo = document.getElementById('cfg-modelo').value;
+  var dia = parseInt(document.getElementById('cfg-dia').value) || 1;
+  if (modelo === 'custom' && (dia < 2 || dia > 28)) { toast('Informe um dia entre 2 e 28'); return; }
+  db.cfg = { modelo: modelo, diaInicio: dia };
+  salvar(); toast('✓ Configurações salvas!'); render();
+}
+function renderCfg() {
+  var cfg = db.cfg || {modelo:'cal', diaInicio:1};
+  document.getElementById('cfg-modelo').value = cfg.modelo;
+  document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
+  document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
+  renderCats();
+}
   var mk=mesKey(m,y),base={};
   db.fixos.forEach(function(f){if(f.ini<=mk&&(f.fim===null||f.fim>mk)){if(!base[f.gid]||f.ini>base[f.gid].ini)base[f.gid]=f;}});
   var result=[];
@@ -457,11 +546,12 @@ document.querySelectorAll('.nb').forEach(function(b){
     b.classList.add('on');
     document.getElementById('fab').style.display=(curPg==='dash'||curPg==='lanc'||curPg==='fix'||curPg==='cc')?'flex':'none';
     if(curPg==='cc')voltarCartoes();
+    if(curPg==='cfg')renderCfg();
     render();
   });
 });
-document.getElementById('mprev').onclick=function(){if(curM===0){curM=11;curY--;}else curM--;render();};
-document.getElementById('mnext').onclick=function(){if(curM===11){curM=0;curY++;}else curM++;render();};
+document.getElementById('mprev').onclick=function(){ prevCiclo(); };
+document.getElementById('mnext').onclick=function(){ nextCiclo(); };
 document.getElementById('fab').onclick=function(){
   if(curPg==='fix')abrirNovoFixo();
   else if(curPg==='cc'){if(curCCId)abrirNovoGastoCC(curCCId);else if(db.cartoes.length<2)abrirCadCartao();else toast('Máximo 2 cartões');}
@@ -701,8 +791,8 @@ function itemFixoMesHTML(f,mk){
 }
 
 function render(){
-  document.getElementById('mlabel').textContent=MESES[curM]+' '+curY;
-  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCats();
+  document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
+  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();
 }
 function renderDash(){
   var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;

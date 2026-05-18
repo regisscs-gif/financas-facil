@@ -172,7 +172,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="nb" data-pg="parc"><span>💳</span>Parcelas</button>
     <button class="nb" data-pg="cc"><span>🃏</span>Cartões</button>
     <button class="nb" data-pg="proj"><span>📈</span>Projeção</button>
-  </nav>
+  <button class="nb" data-pg="cat"><span>☰</span>Categ.</button>  </nav>
 </div>
 
 <!-- MODAIS -->
@@ -346,13 +346,12 @@ async function salvarNuvem(){
   if(!currentUser||!accessToken) return;
   document.getElementById('saving-indicator').style.display='inline';
   try{
-    await axios.post(SUPA_URL+'/rest/v1/financas',
-      {user_id:currentUser.id, dados:db},
+    await axios.patch(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id,
+      {dados:db, updated_at: new Date().toISOString()},
       {headers:{
         Authorization:'Bearer '+accessToken,
         'apikey':SUPA_KEY,
-        'Content-Type':'application/json',
-        'Prefer':'resolution=merge-duplicates'
+        'Content-Type':'application/json'
       }}
     );
   }catch(e){ console.warn('Erro ao salvar:',e); }
@@ -360,8 +359,9 @@ async function salvarNuvem(){
 }
 
 function salvar(){
+  if(!currentUser||!accessToken) return; // nunca salva antes de carregar
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(salvarNuvem, 800); // debounce 800ms
+  saveTimer = setTimeout(salvarNuvem, 800);
 }
 
 // ── DADOS ────────────────────────────────────────────────

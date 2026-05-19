@@ -151,9 +151,13 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     </div>
   </div>
   <div class="page" id="pg-proj">
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">Saldo por mês — próx. 6 meses</div><div id="proj-bars"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">Fixos ativos</div><div id="proj-fix"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">Parcelas futuras</div><div id="proj-fut"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📉 Saldo acumulado projetado</div><div id="proj-acum"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 5 despesas — mês atual</div><div id="proj-top5"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔁 Fixos ativos</div><div id="proj-fix"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 Parcelas futuras</div><div id="proj-fut"></div></div>
   </div>
   <!-- CONFIGURAÇÕES -->
   <div class="page" id="pg-cfg">
@@ -305,7 +309,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v6';
+var APP_VERSION = 'v7';
 
 var currentUser = null;
 var accessToken = null;
@@ -928,18 +932,131 @@ function renderFatura(ccId){
   document.getElementById('cc-fatura-content').innerHTML=h;
 }
 function renderProj(){
-  var dados=[],max=0;
-  for(var i=0;i<6;i++){var mm=(curM+i)%12,aa=curY+Math.floor((curM+i)/12);var s=somaR(mm,aa)-somaE(mm,aa);dados.push({m:mm,s:s});if(Math.abs(s)>max)max=Math.abs(s);}
-  if(max===0)max=1;
-  var bars='<div style="display:flex;align-items:flex-end;gap:6px;height:110px;margin-bottom:6px">';
-  dados.forEach(function(d){var pct=Math.max(5,Math.round((Math.abs(d.s)/max)*100));var cor=d.s>=0?'#06d6a0':'#ef476f';bars+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><div style="font-size:8px;color:#7b80a0;margin-bottom:2px;text-align:center">'+(d.s>=0?'+':'-')+fmt(d.s).replace('R$ ','')+'</div><div style="width:100%;background:'+cor+';border-radius:6px 6px 0 0;height:'+pct+'%"></div></div>';});
-  bars+='</div><div style="display:flex;gap:6px">';dados.forEach(function(d){bars+='<div style="flex:1;text-align:center;font-size:9px;color:#7b80a0">'+MABR[d.m]+'</div>';});bars+='</div>';
-  document.getElementById('proj-bars').innerHTML=bars;
-  var gidsAtivos={};db.fixos.filter(function(f){return f.fim===null;}).forEach(function(f){if(!gidsAtivos[f.gid]||f.ini>gidsAtivos[f.gid].ini)gidsAtivos[f.gid]=f;});
+  var CORES=['#ef476f','#ffd166','#06d6a0','#6c63ff','#4ecdc4','#a78bfa','#fb923c','#34d399'];
+  var dados=[];
+  for(var i=0;i<6;i++){
+    var mm=(curM+i)%12,aa=curY+Math.floor((curM+i)/12);
+    dados.push({m:mm,y:aa,r:somaR(mm,aa),e:somaE(mm,aa)});
+  }
+
+  // ── 1. Receita vs Despesa agrupado ──
+  var maxRE=0;
+  dados.forEach(function(d){if(d.r>maxRE)maxRE=d.r;if(d.e>maxRE)maxRE=d.e;});
+  if(maxRE===0)maxRE=1;
+  var h1='<div style="display:flex;align-items:flex-end;gap:5px;height:90px;margin-bottom:4px">';
+  dados.forEach(function(d){
+    var rh=Math.max(2,Math.round((d.r/maxRE)*85)),eh=Math.max(2,Math.round((d.e/maxRE)*85));
+    h1+='<div style="flex:1;display:flex;gap:2px;align-items:flex-end;height:100%">'
+      +'<div style="flex:1;background:#06d6a0;height:'+rh+'px;border-radius:3px 3px 0 0"></div>'
+      +'<div style="flex:1;background:#ef476f;height:'+eh+'px;border-radius:3px 3px 0 0"></div>'
+      +'</div>';
+  });
+  h1+='</div><div style="display:flex;gap:5px;margin-bottom:8px">';
+  dados.forEach(function(d){h1+='<div style="flex:1;text-align:center;font-size:8px;color:#7b80a0">'+MABR[d.m]+'</div>';});
+  h1+='</div><div style="display:flex;gap:12px;font-size:10px;color:#7b80a0">'
+    +'<span><span style="display:inline-block;width:8px;height:8px;background:#06d6a0;border-radius:2px;margin-right:3px"></span>Receita</span>'
+    +'<span><span style="display:inline-block;width:8px;height:8px;background:#ef476f;border-radius:2px;margin-right:3px"></span>Despesa</span></div>';
+  document.getElementById('proj-re').innerHTML=h1;
+
+  // ── 2. Saldo acumulado (SVG linha) ──
+  var acum=0,acumDados=[];
+  dados.forEach(function(d){acum+=d.r-d.e;acumDados.push({m:d.m,s:acum});});
+  var maxA=Math.max.apply(null,acumDados.map(function(d){return Math.abs(d.s);}));
+  if(maxA===0)maxA=1;
+  var W=300,H=80,PAD=10;
+  var pts=acumDados.map(function(d,i){
+    return {x:PAD+(i/(acumDados.length-1||1))*(W-PAD*2),y:H/2-(d.s/maxA)*(H/2-PAD),s:d.s,m:d.m};
+  });
+  var pathD=pts.map(function(p,i){return(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
+  var h2='<svg viewBox="0 0 '+W+' '+(H+16)+'" style="width:100%;overflow:visible">'
+    +'<line x1="'+PAD+'" y1="'+(H/2)+'" x2="'+(W-PAD)+'" y2="'+(H/2)+'" stroke="#2a2f4a" stroke-width="1" stroke-dasharray="3,3"/>'
+    +'<path d="'+pathD+'" fill="none" stroke="#6c63ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  pts.forEach(function(p){
+    h2+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+(p.s>=0?'#06d6a0':'#ef476f')+'"/>'
+      +'<text x="'+p.x.toFixed(1)+'" y="'+(H+14)+'" text-anchor="middle" font-size="8" fill="#7b80a0">'+MABR[p.m]+'</text>';
+  });
+  h2+='</svg>';
+  document.getElementById('proj-acum').innerHTML=h2;
+
+  // ── 3. Donut por categoria ──
+  var catMap={};
+  lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e';}).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});
+  fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).forEach(function(f){catMap[f.cat]=(catMap[f.cat]||0)+f.val;});
+  var cats=Object.keys(catMap).map(function(k){return{cat:k,val:catMap[k]};}).sort(function(a,b){return b.val-a.val;});
+  var totE=cats.reduce(function(s,e){return s+e.val;},0);
+  var h3;
+  if(!cats.length){h3='<div class="empty">Sem despesas no mês atual.</div>';}
+  else{
+    var segs=[],cur=0;
+    cats.forEach(function(e,i){var p=(e.val/totE)*100;segs.push(CORES[i%CORES.length]+' '+cur.toFixed(1)+'% '+(cur+p).toFixed(1)+'%');cur+=p;});
+    h3='<div style="display:flex;align-items:center;gap:14px">'
+      +'<div style="position:relative;width:88px;height:88px;flex-shrink:0">'
+      +'<div style="width:88px;height:88px;border-radius:50%;background:conic-gradient('+segs.join(',')+')" ></div>'
+      +'<div style="position:absolute;inset:22px;background:#1a1d27;border-radius:50%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:9px;color:#7b80a0;line-height:1.3">Total<br><b style="color:#e8eaf6;font-size:10px">'+fmt(totE).replace('R$ ','R$')+'</b></div>'
+      +'</div><div style="flex:1;min-width:0">';
+    cats.slice(0,6).forEach(function(e,i){
+      h3+='<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">'
+        +'<div style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:'+CORES[i%CORES.length]+'"></div>'
+        +'<div style="font-size:10px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+e.cat+'</div>'
+        +'<div style="font-size:10px;color:#7b80a0;flex-shrink:0">'+Math.round((e.val/totE)*100)+'%</div>'
+        +'</div>';
+    });
+    h3+='</div></div>';
+  }
+  document.getElementById('proj-donut').innerHTML=h3;
+
+  // ── 4. Comprometimento da renda ──
+  var rec=somaR(curM,curY);
+  var fixE=fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).reduce(function(s,f){return s+f.val;},0);
+  var parcE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='pa';}).reduce(function(s,l){return s+l.val;},0);
+  var varE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='av';}).reduce(function(s,l){return s+l.val;},0);
+  var livre=rec-fixE-parcE-varE;
+  var h4;
+  if(rec<=0){h4='<div class="empty">Sem receita cadastrada no mês atual.</div>';}
+  else{
+    var pF=Math.min(100,Math.round((fixE/rec)*100)),pP=Math.min(100-pF,Math.round((parcE/rec)*100)),pV=Math.min(100-pF-pP,Math.round((varE/rec)*100)),pL=Math.max(0,100-pF-pP-pV);
+    h4='<div style="font-size:11px;color:#7b80a0;margin-bottom:6px">Receita do mês: <b style="color:#e8eaf6">'+fmt(rec)+'</b></div>'
+      +'<div style="display:flex;height:20px;border-radius:99px;overflow:hidden;margin-bottom:10px">'
+      +(pF?'<div style="width:'+pF+'%;background:#6c63ff"></div>':'')
+      +(pP?'<div style="width:'+pP+'%;background:#ffd166"></div>':'')
+      +(pV?'<div style="width:'+pV+'%;background:#ef476f"></div>':'')
+      +(pL?'<div style="width:'+pL+'%;background:#22263a"></div>':'')
+      +'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:10px">'
+      +'<span><span style="display:inline-block;width:8px;height:8px;background:#6c63ff;border-radius:2px;margin-right:3px"></span>Fixos '+fmt(fixE)+'</span>'
+      +'<span><span style="display:inline-block;width:8px;height:8px;background:#ffd166;border-radius:2px;margin-right:3px"></span>Parcelas '+fmt(parcE)+'</span>'
+      +'<span><span style="display:inline-block;width:8px;height:8px;background:#ef476f;border-radius:2px;margin-right:3px"></span>Variáveis '+fmt(varE)+'</span>'
+      +'<span style="color:'+(livre>=0?'#06d6a0':'#ef476f')+'">'
+      +'<span style="display:inline-block;width:8px;height:8px;background:'+(livre>=0?'#06d6a0':'#ef476f')+';border-radius:2px;margin-right:3px"></span>'
+      +'Livre '+fmt(Math.abs(livre))+(livre<0?' ⚠️':'')+'</span></div>';
+  }
+  document.getElementById('proj-comp').innerHTML=h4;
+
+  // ── 5. Top 5 despesas ──
+  var allE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e';})
+    .concat(fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).map(function(f){return{desc:f.desc,val:f.val,cat:f.cat};}))
+    .sort(function(a,b){return b.val-a.val;}).slice(0,5);
+  var maxE=allE.length?allE[0].val:1;
+  var h5=allE.length?allE.map(function(e){
+    var pct=Math.round((e.val/maxE)*100);
+    return '<div style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%">'+emo(e.cat)+' '+e.desc+'</span>'
+      +'<span style="color:#ef476f;font-weight:700;flex-shrink:0">-'+fmt(e.val)+'</span></div>'
+      +'<div style="background:#22263a;border-radius:99px;height:5px">'
+      +'<div style="width:'+pct+'%;background:#ef476f;border-radius:99px;height:100%"></div></div></div>';
+  }).join(''):'<div class="empty">Sem despesas no mês atual.</div>';
+  document.getElementById('proj-top5').innerHTML=h5;
+
+  // ── Fixos ativos ──
+  var gidsAtivos={};
+  db.fixos.filter(function(f){return f.fim===null;}).forEach(function(f){if(!gidsAtivos[f.gid]||f.ini>gidsAtivos[f.gid].ini)gidsAtivos[f.gid]=f;});
   var fixos=Object.values(gidsAtivos);
-  document.getElementById('proj-fix').innerHTML=fixos.length?fixos.map(function(f){var isR=f.tipo==='r';return '<div class="it" style="cursor:default"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+f.desc+'</div><div class="isub">'+f.cat+' · dia '+pad(f.dia||1)+'</div></div><div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(f.val)+'</div></div>';}).join(''):'<div class="empty">Nenhum fixo ativo.</div>';
+  document.getElementById('proj-fix').innerHTML=fixos.length?fixos.map(function(f){var isR=f.tipo==='r';return'<div class="it" style="cursor:default"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+f.desc+'</div><div class="isub">'+f.cat+' · dia '+pad(f.dia||1)+'</div></div><div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(f.val)+'</div></div>';}).join(''):'<div class="empty">Nenhum fixo ativo.</div>';
+
+  // ── Parcelas futuras ──
   var td=hoje();var fut=db.lancs.filter(function(l){return l.sub==='pa'&&l.data>td;}).sort(function(a,b){return a.data.localeCompare(b.data);}).slice(0,8);
-  document.getElementById('proj-fut').innerHTML=fut.length?fut.map(function(l){var lp=l.data.split('-');return '<div class="it" style="cursor:default"><div class="ico" style="background:rgba(108,99,255,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+'</div><div class="isub">'+lp[2]+'/'+lp[1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div></div>';}).join(''):'<div class="empty">Nenhuma parcela futura.</div>';
+  document.getElementById('proj-fut').innerHTML=fut.length?fut.map(function(l){var lp=l.data.split('-');return'<div class="it" style="cursor:default"><div class="ico" style="background:rgba(108,99,255,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+'</div><div class="isub">'+lp[2]+'/'+lp[1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div></div>';}).join(''):'<div class="empty">Nenhuma parcela futura.</div>';
 }
 function renderCats(){
   db.catsR.sort();db.catsE.sort();

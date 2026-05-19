@@ -1,0 +1,26 @@
+{
+  "name": "FinançasFácil",
+  "short_name": "FinançasFácil",
+  "description": "Controle financeiro pessoal na nuvem",
+  "start_url": "/financas-facil/",
+  "scope": "/financas-facil/",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#6c63ff",
+  "orientation": "portrait-primary",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/financas-facil/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/financas-facil/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

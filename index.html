@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;-webkit-tap-highlight-color:transparent}
 body{background:#0f1117;color:#e8eaf6;max-width:430px;margin:0 auto;min-height:100vh;padding-bottom:80px}
@@ -294,6 +295,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 // ── SUPABASE CONFIG ──────────────────────────────────────
 var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
+var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 var currentUser = null;
 var accessToken = null;
@@ -301,50 +303,20 @@ var saveTimer = null;
 
 // ── SUPABASE AUTH ────────────────────────────────────────
 function loginGoogle(){
-  var redirectTo = 'https://regisscs-gif.github.io/financas-facil';
-  var url = SUPA_URL+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirectTo);
-  window.location.href = url;
-}
-
-async function handleAuthCallback(){
-  // Pega tokens da URL hash após redirect do Google
-  var hash = window.location.hash;
-  if(!hash) return false;
-  var params = {};
-  hash.replace('#','').split('&').forEach(function(p){ var kv=p.split('='); params[kv[0]]=decodeURIComponent(kv[1]||''); });
-  if(params.access_token){
-    accessToken = params.access_token;
-    // Limpa hash da URL
-    history.replaceState(null,'',window.location.pathname);
-    // Busca dados do usuário
-    try{
-      var res = await axios.get(SUPA_URL+'/auth/v1/user',{headers:{Authorization:'Bearer '+accessToken,'apikey':SUPA_KEY}});
-      currentUser = res.data;
-      return true;
-    }catch(e){ return false; }
-  }
-  return false;
+  supa.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: 'https://regisscs-gif.github.io/financas-facil' }
+  });
 }
 
 async function checkSession(){
-  // Tenta recuperar sessão salva localmente
-  var saved = localStorage.getItem('ff_session');
-  if(!saved) return false;
-  try{
-    var s = JSON.parse(saved);
-    accessToken = s.access_token;
-    // Verifica se ainda válido
-    var res = await axios.get(SUPA_URL+'/auth/v1/user',{headers:{Authorization:'Bearer '+accessToken,'apikey':SUPA_KEY}});
-    currentUser = res.data;
-    return true;
-  }catch(e){
-    localStorage.removeItem('ff_session');
-    return false;
-  }
+  var { data: { session } } = await supa.auth.getSession();
+  if(session){ accessToken = session.access_token; currentUser = session.user; return true; }
+  return false;
 }
 
-function logout(){
-  localStorage.removeItem('ff_session');
+async function logout(){
+  await supa.auth.signOut();
   currentUser=null; accessToken=null;
   document.getElementById('app-screen').style.display='none';
   document.getElementById('login-screen').style.display='flex';
@@ -895,9 +867,8 @@ function delCat(t,i){if(t==='r')db.catsR.splice(i,1);else db.catsE.splice(i,1);s
 
 // ── INIT ─────────────────────────────────────────────────
 async function init(){
-  var loggedIn = await handleAuthCallback() || await checkSession();
+  var loggedIn = await checkSession();
   if(loggedIn){
-    localStorage.setItem('ff_session', JSON.stringify({access_token: accessToken}));
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app-screen').style.display='block';
     var meta = currentUser.user_metadata || {};

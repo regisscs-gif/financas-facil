@@ -305,7 +305,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v5';
+var APP_VERSION = 'v6';
 
 var currentUser = null;
 var accessToken = null;
@@ -608,7 +608,7 @@ function fechar(id){document.getElementById(id).classList.remove('on');}
 document.querySelectorAll('.ov').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('on');});});
 function confirmar(msg,cb){confirmCb=cb;document.getElementById('confirm-msg').textContent=msg;document.getElementById('ov-confirm').classList.add('on');}
 function confirmOk(){fechar('ov-confirm');if(confirmCb)confirmCb();}
-function fillSel(id,arr,val){var s=document.getElementById(id);s.innerHTML='';arr.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;if(v===val)o.selected=true;s.appendChild(o);});}
+function fillSel(id,arr,val){var s=document.getElementById(id);s.innerHTML='';arr.slice().sort().forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;if(v===val)o.selected=true;s.appendChild(o);});}
 
 // ── LANÇAMENTOS ─────────────────────────────────────────
 function setTipo(t){tipo=t;document.getElementById('tb-r').className='ttb'+(t==='r'?' gr':'');document.getElementById('tb-e').className='ttb'+(t==='e'?' rd':'');fillSel('f-cat',t==='r'?db.catsR:db.catsE,null);}
@@ -942,6 +942,7 @@ function renderProj(){
   document.getElementById('proj-fut').innerHTML=fut.length?fut.map(function(l){var lp=l.data.split('-');return '<div class="it" style="cursor:default"><div class="ico" style="background:rgba(108,99,255,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+'</div><div class="isub">'+lp[2]+'/'+lp[1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div></div>';}).join(''):'<div class="empty">Nenhuma parcela futura.</div>';
 }
 function renderCats(){
+  db.catsR.sort();db.catsE.sort();
   document.getElementById('cr').innerHTML=db.catsR.map(function(c,i){return '<span class="chip">'+c+'<button onclick="delCat(\'r\','+i+')">×</button></span>';}).join('');
   document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return '<span class="chip">'+c+'<button onclick="delCat(\'e\','+i+')">×</button></span>';}).join('');
 }

@@ -309,7 +309,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v7';
+var APP_VERSION = 'v8';
 
 var currentUser = null;
 var accessToken = null;
@@ -939,17 +939,23 @@ function renderProj(){
     dados.push({m:mm,y:aa,r:somaR(mm,aa),e:somaE(mm,aa)});
   }
 
+  // formata valor compacto para gráficos
+  function fmtK(v){var a=Math.abs(v),s=v>=0?'+':'-';return s+(a>=1000?(a/1000).toFixed(1).replace(/\.0$/,'')+'k':Math.round(a).toString());}
+
   // ── 1. Receita vs Despesa agrupado ──
   var maxRE=0;
   dados.forEach(function(d){if(d.r>maxRE)maxRE=d.r;if(d.e>maxRE)maxRE=d.e;});
   if(maxRE===0)maxRE=1;
-  var h1='<div style="display:flex;align-items:flex-end;gap:5px;height:90px;margin-bottom:4px">';
+  var h1='<div style="display:flex;gap:5px;margin-bottom:4px">';
   dados.forEach(function(d){
-    var rh=Math.max(2,Math.round((d.r/maxRE)*85)),eh=Math.max(2,Math.round((d.e/maxRE)*85));
-    h1+='<div style="flex:1;display:flex;gap:2px;align-items:flex-end;height:100%">'
+    var sal=d.r-d.e,cor=sal>=0?'#06d6a0':'#ef476f';
+    var rh=Math.max(2,Math.round((d.r/maxRE)*72)),eh=Math.max(2,Math.round((d.e/maxRE)*72));
+    h1+='<div style="flex:1;display:flex;flex-direction:column;align-items:center">'
+      +'<div style="font-size:8px;font-weight:700;color:'+cor+';margin-bottom:2px;white-space:nowrap">'+fmtK(sal)+'</div>'
+      +'<div style="display:flex;gap:2px;align-items:flex-end;width:100%;height:72px">'
       +'<div style="flex:1;background:#06d6a0;height:'+rh+'px;border-radius:3px 3px 0 0"></div>'
       +'<div style="flex:1;background:#ef476f;height:'+eh+'px;border-radius:3px 3px 0 0"></div>'
-      +'</div>';
+      +'</div></div>';
   });
   h1+='</div><div style="display:flex;gap:5px;margin-bottom:8px">';
   dados.forEach(function(d){h1+='<div style="flex:1;text-align:center;font-size:8px;color:#7b80a0">'+MABR[d.m]+'</div>';});
@@ -963,17 +969,21 @@ function renderProj(){
   dados.forEach(function(d){acum+=d.r-d.e;acumDados.push({m:d.m,s:acum});});
   var maxA=Math.max.apply(null,acumDados.map(function(d){return Math.abs(d.s);}));
   if(maxA===0)maxA=1;
-  var W=300,H=80,PAD=10;
+  var W=300,H=80,PAD=14;
   var pts=acumDados.map(function(d,i){
     return {x:PAD+(i/(acumDados.length-1||1))*(W-PAD*2),y:H/2-(d.s/maxA)*(H/2-PAD),s:d.s,m:d.m};
   });
   var pathD=pts.map(function(p,i){return(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
-  var h2='<svg viewBox="0 0 '+W+' '+(H+16)+'" style="width:100%;overflow:visible">'
+  var h2='<svg viewBox="0 0 '+W+' '+(H+20)+'" style="width:100%;overflow:visible">'
     +'<line x1="'+PAD+'" y1="'+(H/2)+'" x2="'+(W-PAD)+'" y2="'+(H/2)+'" stroke="#2a2f4a" stroke-width="1" stroke-dasharray="3,3"/>'
     +'<path d="'+pathD+'" fill="none" stroke="#6c63ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   pts.forEach(function(p){
-    h2+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+(p.s>=0?'#06d6a0':'#ef476f')+'"/>'
-      +'<text x="'+p.x.toFixed(1)+'" y="'+(H+14)+'" text-anchor="middle" font-size="8" fill="#7b80a0">'+MABR[p.m]+'</text>';
+    var cor=p.s>=0?'#06d6a0':'#ef476f';
+    // label acima se ponto está na metade inferior, abaixo se na superior
+    var labelY=p.y>(H/2)?p.y-8:p.y+14;
+    h2+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+cor+'"/>'
+      +'<text x="'+p.x.toFixed(1)+'" y="'+labelY.toFixed(1)+'" text-anchor="middle" font-size="7.5" font-weight="bold" fill="'+cor+'">'+fmtK(p.s)+'</text>'
+      +'<text x="'+p.x.toFixed(1)+'" y="'+(H+16)+'" text-anchor="middle" font-size="8" fill="#7b80a0">'+MABR[p.m]+'</text>';
   });
   h2+='</svg>';
   document.getElementById('proj-acum').innerHTML=h2;

@@ -385,11 +385,16 @@ async function logout(){
 }
 
 // ── SUPABASE DATA ────────────────────────────────────────
+async function authHeaders(){
+  var { data: { session } } = await supa.auth.getSession();
+  if(session){ accessToken = session.access_token; currentUser = session.user; }
+  return { Authorization:'Bearer '+accessToken, 'apikey':SUPA_KEY, 'Content-Type':'application/json' };
+}
+
 async function carregarDados(){
   try{
-    var res = await axios.get(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id+'&select=dados',{
-      headers:{Authorization:'Bearer '+accessToken,'apikey':SUPA_KEY,'Content-Type':'application/json'}
-    });
+    var hdrs = await authHeaders();
+    var res = await axios.get(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id+'&select=dados',{ headers:hdrs });
     if(res.data && res.data.length>0 && res.data[0].dados){
       var d = res.data[0].dados;
       db = Object.assign({},db,d);
@@ -399,16 +404,13 @@ async function carregarDados(){
 }
 
 async function salvarNuvem(){
-  if(!currentUser||!accessToken) return;
+  if(!currentUser) return;
   document.getElementById('saving-indicator').style.display='inline';
   try{
+    var hdrs = await authHeaders();
     await axios.patch(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id,
       {dados:db, updated_at: new Date().toISOString()},
-      {headers:{
-        Authorization:'Bearer '+accessToken,
-        'apikey':SUPA_KEY,
-        'Content-Type':'application/json'
-      }}
+      {headers:hdrs}
     );
   }catch(e){ console.warn('Erro ao salvar:',e); logError('salvarNuvem', e); }
   document.getElementById('saving-indicator').style.display='none';
@@ -545,7 +547,11 @@ function gastosCC(ccId,m,y){
 function totalFaturaEu(ccId,m,y){return gastosCC(ccId,m,y).filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);}
 
 function pertence(l,m,y){var p=l.data.split('-');return +p[0]===y&&+p[1]-1===m;}
-function lancsDoMes(m,y){return db.lancs.filter(function(l){return pertence(l,m,y);});}
+function lancsDoMes(m,y){
+  var cfg=db.cfg||{modelo:'cal',diaInicio:1};
+  if(cfg.modelo==='custom'&&cfg.diaInicio>1) return db.lancs.filter(function(l){return pertenceCiclo(l.data,m,y);});
+  return db.lancs.filter(function(l){return pertence(l,m,y);});
+}
 function somaR(m,y){
   var r=lancsDoMes(m,y).filter(function(l){return l.tipo==='r';}).reduce(function(s,l){return s+l.val;},0);
   r+=fixosVigentes(m,y).filter(function(f){return f.tipo==='r';}).reduce(function(s,f){return s+f.val;},0);
@@ -960,10 +966,9 @@ async function init(){
 
 async function iniciarDados(){
   try{
-    await axios.post(SUPA_URL+'/rest/v1/financas',
-      {user_id: currentUser.id, dados: db},
-      {headers:{Authorization:'Bearer '+accessToken,'apikey':SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates'}}
-    );
+    var hdrs = await authHeaders();
+    hdrs['Prefer'] = 'resolution=ignore-duplicates';
+    await axios.post(SUPA_URL+'/rest/v1/financas', {user_id: currentUser.id, dados: db}, {headers:hdrs});
   }catch(e){}
 }
 

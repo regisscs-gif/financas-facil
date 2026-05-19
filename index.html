@@ -301,7 +301,7 @@ var saveTimer = null;
 
 // ── SUPABASE AUTH ────────────────────────────────────────
 function loginGoogle(){
-  var redirectTo = window.location.href.split('?')[0].split('#')[0];
+  var redirectTo = 'https://regisscs-gif.github.io/financas-facil';
   var url = SUPA_URL+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirectTo);
   window.location.href = url;
 }
@@ -480,6 +480,7 @@ function renderCfg() {
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
   renderCats();
 }
+function fixosVigentes(m,y){
   var mk=mesKey(m,y),base={};
   db.fixos.forEach(function(f){if(f.ini<=mk&&(f.fim===null||f.fim>mk)){if(!base[f.gid]||f.ini>base[f.gid].ini)base[f.gid]=f;}});
   var result=[];
@@ -918,13 +919,6 @@ async function iniciarDados(){
       {headers:{Authorization:'Bearer '+accessToken,'apikey':SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates'}}
     );
   }catch(e){}
-}
-
-// Redireciona para a URL correta após login
-function loginGoogle(){
-  var redirectTo = 'https://regisscs-gif.github.io/financas-facil';
-  var url = SUPA_URL+'/auth/v1/authorize?provider=google&redirect_to='+encodeURIComponent(redirectTo);
-  window.location.href = url;
 }
 
 init();

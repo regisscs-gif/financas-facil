@@ -315,7 +315,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v10';
+var APP_VERSION = 'v11';
 
 var currentUser = null;
 var accessToken = null;
@@ -405,15 +405,22 @@ async function authHeaders(){
 }
 
 async function carregarDados(){
-  try{
-    var hdrs = await authHeaders();
-    var res = await axios.get(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id+'&select=dados',{ headers:hdrs });
-    if(res.data && res.data.length>0 && res.data[0].dados){
-      var d = res.data[0].dados;
-      db = Object.assign({},db,d);
+  for(var tentativa=1; tentativa<=2; tentativa++){
+    try{
+      var hdrs = await authHeaders();
+      var res = await axios.get(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id+'&select=dados',{ headers:hdrs });
+      if(res.data && res.data.length>0 && res.data[0].dados){
+        var d = res.data[0].dados;
+        db = Object.assign({},db,d);
+      }
+      log('data_load', {ok:true, cfg: db.cfg});
+      return;
+    }catch(e){
+      console.warn('Erro ao carregar dados (tentativa '+tentativa+'):',e);
+      logError('carregarDados', e);
+      if(tentativa < 2) await new Promise(function(r){setTimeout(r,1500);});
     }
-    log('data_load', {ok:true});
-  }catch(e){ console.warn('Erro ao carregar dados:',e); logError('carregarDados', e); }
+  }
 }
 
 async function salvarNuvem(){
@@ -496,8 +503,10 @@ function getCicloLabel(m, y) {
 // Verifica se uma data (string yyyy-mm-dd) pertence ao ciclo m/y
 function pertenceCiclo(dataStr, m, y) {
   var c = getCiclo(m, y);
-  var d = new Date(dataStr + 'T12:00:00');
-  return d >= c.ini && d <= c.fim;
+  // Comparação por string YYYY-MM-DD evita problemas de fuso e inclui corretamente o último dia
+  var iniStr = c.ini.getFullYear()+'-'+pad(c.ini.getMonth()+1)+'-'+pad(c.ini.getDate());
+  var fimStr = c.fim.getFullYear()+'-'+pad(c.fim.getMonth()+1)+'-'+pad(c.fim.getDate());
+  return dataStr >= iniStr && dataStr <= fimStr;
 }
 
 // Navegar ciclos

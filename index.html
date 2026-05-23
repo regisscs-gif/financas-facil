@@ -272,6 +272,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <label>Limite (R$)</label><input id="cc-limite" type="number" min="0" step="0.01" placeholder="0.00">
     <label>Dia de fechamento</label><input id="cc-fecha" type="number" min="1" max="31" placeholder="Ex: 10">
     <label>Dia de vencimento</label><input id="cc-vence" type="number" min="1" max="31" placeholder="Ex: 17">
+    <label>Categoria do pagamento</label><select id="cc-catpag"></select>
     <button class="sbtn" onclick="salvarCartao()">Salvar</button>
     <button class="dbtn" id="btn-del-cc" style="display:none" onclick="pedirDelCartao()">🗑 Excluir cartão</button>
     <button class="cbtn" onclick="fechar('ov-cc-cad')">Cancelar</button>
@@ -316,7 +317,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v12';
+var APP_VERSION = 'v13';
 
 var currentUser = null;
 var accessToken = null;
@@ -569,6 +570,36 @@ function gastosCC(ccId,m,y){
 }
 function totalFaturaEu(ccId,m,y){return gastosCC(ccId,m,y).filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);}
 
+function syncFaturas(){
+  db.lancs=db.lancs.filter(function(l){return l.sub!=='fat';});
+  var combos={};
+  db.ccLancs.forEach(function(l){
+    var cc=db.cartoes.find(function(c){return c.id===l.ccId;});if(!cc)return;
+    var parts=l.data.split('-');var ey=+parts[0],em0=+parts[1]-1;
+    for(var delta=-1;delta<=1;delta++){
+      var tm=em0+delta,ty=ey;
+      if(tm<0){tm+=12;ty--;}if(tm>11){tm-=12;ty++;}
+      var p=periodoFatura(cc,tm,ty);var d=new Date(l.data+'T12:00:00');
+      if(d>=p.ini&&d<=p.fim){combos[l.ccId+':'+mesKey(tm,ty)]={ccId:l.ccId,m:tm,y:ty};break;}
+    }
+  });
+  Object.keys(combos).forEach(function(key){
+    var c=combos[key];var cc=db.cartoes.find(function(x){return x.id===c.ccId;});if(!cc)return;
+    var total=totalFaturaEu(c.ccId,c.m,c.y);if(total<=0)return;
+    var venceData=avanca(c.y,c.m+1,cc.vence||1,0);
+    var desc='Fatura '+cc.nome+' '+MESES[c.m].substr(0,3)+'/'+c.y;
+    db.lancs.push({id:db.nid++,desc:desc,val:total,data:venceData,cat:cc.catPag||db.catsE[0]||'Outros',tipo:'e',sub:'fat',ccId:c.ccId,ccMk:mesKey(c.m,c.y)});
+  });
+}
+function migrarDados(){
+  var prefixes=db.cartoes.map(function(cc){return'Fatura '+cc.nome+' ';});
+  db.lancs=db.lancs.filter(function(l){
+    if(l.sub!=='av'||l.tipo!=='e')return true;
+    return!prefixes.some(function(pre){return l.desc.startsWith(pre);});
+  });
+  db.ccPagamentos=[];
+}
+
 function pertence(l,m,y){var p=l.data.split('-');return +p[0]===y&&+p[1]-1===m;}
 function lancsDoMes(m,y){
   var cfg=db.cfg||{modelo:'cal',diaInicio:1};
@@ -583,8 +614,6 @@ function somaR(m,y){
 function somaE(m,y){
   var e=lancsDoMes(m,y).filter(function(l){return l.tipo==='e';}).reduce(function(s,l){return s+l.val;},0);
   e+=fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).reduce(function(s,f){return s+f.val;},0);
-  var mk=mesKey(m,y);
-  db.ccPagamentos.filter(function(p){return p.mk===mk;}).forEach(function(p){e+=p.val;});
   return e;
 }
 
@@ -775,24 +804,25 @@ function abrirCadCartao(id){
   editCCId=id||null;
   document.getElementById('cc-cad-title').textContent=editCCId?'Editar Cartão':'Novo Cartão';
   document.getElementById('btn-del-cc').style.display=editCCId?'block':'none';
-  if(editCCId){var cc=db.cartoes.find(function(c){return c.id===editCCId;});if(!cc)return;document.getElementById('cc-nome').value=cc.nome;document.getElementById('cc-limite').value=cc.limite;document.getElementById('cc-fecha').value=cc.fecha;document.getElementById('cc-vence').value=cc.vence;}
-  else{document.getElementById('cc-nome').value='';document.getElementById('cc-limite').value='';document.getElementById('cc-fecha').value='';document.getElementById('cc-vence').value='';}
+  if(editCCId){var cc=db.cartoes.find(function(c){return c.id===editCCId;});if(!cc)return;document.getElementById('cc-nome').value=cc.nome;document.getElementById('cc-limite').value=cc.limite;document.getElementById('cc-fecha').value=cc.fecha;document.getElementById('cc-vence').value=cc.vence;fillSel('cc-catpag',db.catsE,cc.catPag||null);}
+  else{document.getElementById('cc-nome').value='';document.getElementById('cc-limite').value='';document.getElementById('cc-fecha').value='';document.getElementById('cc-vence').value='';fillSel('cc-catpag',db.catsE,null);}
   document.getElementById('ov-cc-cad').classList.add('on');
 }
 function salvarCartao(){
   var nome=document.getElementById('cc-nome').value.trim();var limite=parseFloat(document.getElementById('cc-limite').value)||0;
   var fecha=parseInt(document.getElementById('cc-fecha').value);var vence=parseInt(document.getElementById('cc-vence').value);
+  var catPag=document.getElementById('cc-catpag').value;
   if(!nome){toast('Informe o nome');return;}if(!fecha||!vence){toast('Informe os dias');return;}
-  if(editCCId){db.cartoes=db.cartoes.map(function(c){return c.id===editCCId?Object.assign({},c,{nome:nome,limite:limite,fecha:fecha,vence:vence}):c;});log('cartao_edit',{id:editCCId,nome:nome});}
-  else{db.cartoes.push({id:db.nid++,nome:nome,limite:limite,fecha:fecha,vence:vence});log('cartao_add',{nome:nome});}
-  fechar('ov-cc-cad');salvar();toast('✓ Cartão salvo!');render();
+  if(editCCId){db.cartoes=db.cartoes.map(function(c){return c.id===editCCId?Object.assign({},c,{nome:nome,limite:limite,fecha:fecha,vence:vence,catPag:catPag}):c;});log('cartao_edit',{id:editCCId,nome:nome});}
+  else{db.cartoes.push({id:db.nid++,nome:nome,limite:limite,fecha:fecha,vence:vence,catPag:catPag});log('cartao_add',{nome:nome});}
+  syncFaturas();fechar('ov-cc-cad');salvar();toast('✓ Cartão salvo!');render();
 }
 function pedirDelCartao(){
   var id=editCCId;
   confirmar('Excluir este cartão e todos os seus lançamentos?',function(){
     db.cartoes=db.cartoes.filter(function(c){return c.id!==id;});
     db.ccLancs=db.ccLancs.filter(function(l){return l.ccId!==id;});
-    db.ccPagamentos=db.ccPagamentos.filter(function(p){return p.ccId!==id;});
+    db.lancs=db.lancs.filter(function(l){return!(l.sub==='fat'&&l.ccId===id);});
     log('cartao_del',{id:id});
     fechar('ov-cc-cad');salvar();toast('Cartão excluído.');voltarCartoes();render();
   });
@@ -826,7 +856,7 @@ function salvarGastoCC(){
   if(editCCLancId!==null){
     db.ccLancs=db.ccLancs.map(function(l){return l.id===editCCLancId?Object.assign({},l,{desc:desc,val:valParc,data:data,cat:cat,titular:titular}):l;});
     log('cc_lanc_edit',{id:editCCLancId,val:valParc,cat:cat,titular:titular});
-    fechar('ov-cc-lanc');salvar();toast('✓ Atualizado!');renderFatura(curCCId);return;
+    syncFaturas();fechar('ov-cc-lanc');salvar();toast('✓ Atualizado!');renderFatura(curCCId);return;
   }
   var p=data.split('-');var ay=+p[0],am=+p[1],ad=+p[2];var nid=db.nid;
   if(np>1){
@@ -834,32 +864,19 @@ function salvarGastoCC(){
     for(var i=0;i<np;i++)db.ccLancs.push({id:nid++,ccId:curCCId,desc:desc+' ('+(i+1)+'/'+np+')',val:valParc,data:avanca(ay,am,ad,i),cat:cat,titular:titular,sub:'pa',pid:pid,pn:i+1,pt:np,parcTotal:np});
   }else{db.ccLancs.push({id:nid++,ccId:curCCId,desc:desc,val:valTotal,data:data,cat:cat,titular:titular,sub:'av'});}
   log('cc_lanc_add',{ccId:curCCId,val:valTotal,cat:cat,titular:titular,parcelas:np});
-  db.nid=nid;fechar('ov-cc-lanc');salvar();toast('✓ Salvo!');renderFatura(curCCId);
+  db.nid=nid;syncFaturas();fechar('ov-cc-lanc');salvar();toast('✓ Salvo!');renderFatura(curCCId);
 }
 function pedirDelGastoCC(){
   var id=editCCLancId;
   var l=db.ccLancs.find(function(x){return x.id===id;});
   var pid=l&&l.sub==='pa'?l.pid:null;
-  var delUm=function(){db.ccLancs=db.ccLancs.filter(function(x){return x.id!==id;});log('cc_lanc_del',{id:id});fechar('ov-cc-lanc');salvar();toast('Removido!');renderFatura(curCCId);};
+  var delUm=function(){db.ccLancs=db.ccLancs.filter(function(x){return x.id!==id;});log('cc_lanc_del',{id:id});syncFaturas();fechar('ov-cc-lanc');salvar();toast('Removido!');renderFatura(curCCId);};
   if(pid!=null){
-    var delTodos=function(){db.ccLancs=db.ccLancs.filter(function(x){return!(x.sub==='pa'&&x.pid===pid);});log('cc_lanc_del_all',{pid:pid});fechar('ov-cc-lanc');salvar();toast('Todas as parcelas removidas!');renderFatura(curCCId);};
+    var delTodos=function(){db.ccLancs=db.ccLancs.filter(function(x){return!(x.sub==='pa'&&x.pid===pid);});log('cc_lanc_del_all',{pid:pid});syncFaturas();fechar('ov-cc-lanc');salvar();toast('Todas as parcelas removidas!');renderFatura(curCCId);};
     confirmar('Remover este gasto?',delUm,'Remover todas as parcelas',delTodos);
   }else{
     confirmar('Remover este gasto?',delUm);
   }
-}
-function pagarFatura(ccId,m,y){
-  var total=totalFaturaEu(ccId,m,y);var mk=mesKey(m,y);
-  var cc=db.cartoes.find(function(c){return c.id===ccId;});
-  if(db.ccPagamentos.find(function(p){return p.ccId===ccId&&p.mk===mk;})){toast('Fatura já paga.');return;}
-  if(total<=0){toast('Nenhum gasto seu nesta fatura.');return;}
-  var desc='Fatura '+cc.nome+' '+MESES[m].substr(0,3)+'/'+y;
-  var lancId=db.nid++;
-  var catPag=db.catsE.find(function(c){return c==='Financeiro'||c==='Finanças'||c==='Cartão';})||db.catsE[0]||'Outros';
-  db.lancs.push({id:lancId,desc:desc,val:total,data:avanca(y,m+1,cc.vence||1,0),cat:catPag,tipo:'e',sub:'av'});
-  db.ccPagamentos.push({id:db.nid++,ccId:ccId,mk:mk,val:total,lancId:lancId});
-  log('cc_pagar',{ccId:ccId,mk:mk,val:total});
-  salvar();toast('✓ Fatura registrada!');render();renderFatura(ccId);
 }
 function verCartao(ccId){curCCId=ccId;document.getElementById('cc-list').style.display='none';document.getElementById('cc-fatura-wrap').style.display='block';var cc=db.cartoes.find(function(c){return c.id===ccId;});document.getElementById('cc-fatura-titulo').textContent='💳 '+cc.nome;renderFatura(ccId);}
 function voltarCartoes(){curCCId=null;document.getElementById('cc-list').style.display='block';document.getElementById('cc-fatura-wrap').style.display='none';}
@@ -867,6 +884,12 @@ function voltarCartoes(){curCCId=null;document.getElementById('cc-list').style.d
 // ── RENDER ───────────────────────────────────────────────
 function itemLancHTML(l){
   var isR=l.tipo==='r';var p=l.data.split('-');
+  if(l.sub==='fat'){
+    return '<div class="it"><div class="ico" style="background:rgba(108,99,255,.15)">💳</div>'
+      +'<div class="iinfo"><div class="iname">'+l.desc+'<span class="tag" style="background:rgba(108,99,255,.2);color:#a78bfa;font-size:9px;margin-left:4px">AUTO</span></div><div class="isub">'+l.cat+' · '+p[2]+'/'+p[1]+'</div></div>'
+      +'<div class="ival" style="color:#ef476f">-'+fmt(l.val)+'</div>'
+      +'<div style="width:32px"></div></div>';
+  }
   var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(l.cat)+'</div>'
     +'<div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+p[2]+'/'+p[1]+'</div></div>'
@@ -952,12 +975,10 @@ function renderFatura(ccId){
   var m=curM,y=curY;var gastos=gastosCC(ccId,m,y);
   var meus=gastos.filter(function(l){return l.titular==='eu';});var fam=gastos.filter(function(l){return l.titular==='fam';});
   var totMeu=meus.reduce(function(s,l){return s+l.val;},0);var totFam=fam.reduce(function(s,l){return s+l.val;},0);
-  var mk=mesKey(m,y);var pago=db.ccPagamentos.find(function(p){return p.ccId===ccId&&p.mk===mk;});
   var p=periodoFatura(cc,m,y);var per=pad(p.ini.getDate())+'/'+pad(p.ini.getMonth()+1)+' a '+pad(p.fim.getDate())+'/'+pad(p.fim.getMonth()+1);
   var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+cc.vence+'</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
-    +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div>'
-    +(pago?'<div style="margin-top:8px;font-size:12px;color:#06d6a0">✓ Fatura paga</div>':'<button class="gbtn" style="margin-top:10px" onclick="pagarFatura('+ccId+','+m+','+y+')">✓ Registrar pagamento da fatura</button>')+'</div>';
+    +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';
   if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+'/'+lp[1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
   if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+'/'+lp[1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
   if(!gastos.length)h+='<div class="empty">Nenhum gasto nesta fatura.<br>Toque + para adicionar.</div>';
@@ -1121,6 +1142,9 @@ async function init(){
     document.getElementById('user-email').textContent = currentUser.email || '';
     await iniciarDados();
     await carregarDados();
+    migrarDados();
+    syncFaturas();
+    salvar();
     render();
   } else {
     document.getElementById('login-screen').style.display='flex';

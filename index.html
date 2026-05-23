@@ -138,6 +138,13 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:13px;font-weight:600;margin-bottom:10px">Lançamentos do mês</div>
       <div id="d-list"></div>
     </div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📉 Saldo acumulado projetado</div><div id="proj-acum"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 5 despesas — mês atual</div><div id="proj-top5"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔁 Fixos ativos</div><div id="proj-fix"></div></div>
+    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 Parcelas futuras</div><div id="proj-fut"></div></div>
   </div>
 
   <div class="page" id="pg-lanc"><div id="l-list"></div></div>
@@ -155,15 +162,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       </div>
       <div id="cc-fatura-content"></div>
     </div>
-  </div>
-  <div class="page" id="pg-proj">
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📉 Saldo acumulado projetado</div><div id="proj-acum"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 5 despesas — mês atual</div><div id="proj-top5"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔁 Fixos ativos</div><div id="proj-fix"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 Parcelas futuras</div><div id="proj-fut"></div></div>
   </div>
   <!-- CONFIGURAÇÕES -->
   <div class="page" id="pg-cfg">
@@ -212,7 +210,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="nb" data-pg="fix"><span>🔁</span>Fixos</button>
     <button class="nb" data-pg="parc"><span>💳</span>Parcelas</button>
     <button class="nb" data-pg="cc"><span>🃏</span>Cartões</button>
-    <button class="nb" data-pg="proj"><span>📈</span>Projeção</button>
   <button class="nb" data-pg="cfg"><span>⚙️</span>Config.</button>  </nav>
 </div>
 
@@ -272,7 +269,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <label>Limite (R$)</label><input id="cc-limite" type="number" min="0" step="0.01" placeholder="0.00">
     <label>Dia de fechamento</label><input id="cc-fecha" type="number" min="1" max="31" placeholder="Ex: 10">
     <label>Dia de vencimento</label><input id="cc-vence" type="number" min="1" max="31" placeholder="Ex: 17">
-    <label>Categoria do pagamento</label><select id="cc-catpag"></select>
     <button class="sbtn" onclick="salvarCartao()">Salvar</button>
     <button class="dbtn" id="btn-del-cc" style="display:none" onclick="pedirDelCartao()">🗑 Excluir cartão</button>
     <button class="cbtn" onclick="fechar('ov-cc-cad')">Cancelar</button>
@@ -317,7 +313,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v13';
+var APP_VERSION = 'v14';
 
 var currentUser = null;
 var accessToken = null;
@@ -462,7 +458,7 @@ var confirmCb=null,confirmCb2=null;
 
 var MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 var MABR=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-var EMO={Salário:'💰',Freelance:'💻',Investimentos:'📈',Moradia:'🏠',Alimentação:'🛒',Transporte:'🚗',Saúde:'💊',Lazer:'🎉',Educação:'📚',Vestuário:'👕',Outros:'📦'};
+var EMO={Salário:'💰',Freelance:'💻',Investimentos:'📈',Moradia:'🏠',Alimentação:'🛒',Transporte:'🚗',Saúde:'💊',Lazer:'🎉',Educação:'📚',Vestuário:'👕',Outros:'📦','Cartão de Crédito':'💳'};
 
 function emo(c){return EMO[c]||'📁';}
 function pad(n){return n<10?'0'+n:''+n;}
@@ -588,7 +584,7 @@ function syncFaturas(){
     var total=totalFaturaEu(c.ccId,c.m,c.y);if(total<=0)return;
     var venceData=avanca(c.y,c.m+1,cc.vence||1,0);
     var desc='Fatura '+cc.nome+' '+MESES[c.m].substr(0,3)+'/'+c.y;
-    db.lancs.push({id:db.nid++,desc:desc,val:total,data:venceData,cat:cc.catPag||db.catsE[0]||'Outros',tipo:'e',sub:'fat',ccId:c.ccId,ccMk:mesKey(c.m,c.y)});
+    db.lancs.push({id:db.nid++,desc:desc,val:total,data:venceData,cat:'Cartão de Crédito',tipo:'e',sub:'fat',ccId:c.ccId,ccMk:mesKey(c.m,c.y)});
   });
 }
 function migrarDados(){
@@ -804,17 +800,16 @@ function abrirCadCartao(id){
   editCCId=id||null;
   document.getElementById('cc-cad-title').textContent=editCCId?'Editar Cartão':'Novo Cartão';
   document.getElementById('btn-del-cc').style.display=editCCId?'block':'none';
-  if(editCCId){var cc=db.cartoes.find(function(c){return c.id===editCCId;});if(!cc)return;document.getElementById('cc-nome').value=cc.nome;document.getElementById('cc-limite').value=cc.limite;document.getElementById('cc-fecha').value=cc.fecha;document.getElementById('cc-vence').value=cc.vence;fillSel('cc-catpag',db.catsE,cc.catPag||null);}
-  else{document.getElementById('cc-nome').value='';document.getElementById('cc-limite').value='';document.getElementById('cc-fecha').value='';document.getElementById('cc-vence').value='';fillSel('cc-catpag',db.catsE,null);}
+  if(editCCId){var cc=db.cartoes.find(function(c){return c.id===editCCId;});if(!cc)return;document.getElementById('cc-nome').value=cc.nome;document.getElementById('cc-limite').value=cc.limite;document.getElementById('cc-fecha').value=cc.fecha;document.getElementById('cc-vence').value=cc.vence;}
+  else{document.getElementById('cc-nome').value='';document.getElementById('cc-limite').value='';document.getElementById('cc-fecha').value='';document.getElementById('cc-vence').value='';}
   document.getElementById('ov-cc-cad').classList.add('on');
 }
 function salvarCartao(){
   var nome=document.getElementById('cc-nome').value.trim();var limite=parseFloat(document.getElementById('cc-limite').value)||0;
   var fecha=parseInt(document.getElementById('cc-fecha').value);var vence=parseInt(document.getElementById('cc-vence').value);
-  var catPag=document.getElementById('cc-catpag').value;
   if(!nome){toast('Informe o nome');return;}if(!fecha||!vence){toast('Informe os dias');return;}
-  if(editCCId){db.cartoes=db.cartoes.map(function(c){return c.id===editCCId?Object.assign({},c,{nome:nome,limite:limite,fecha:fecha,vence:vence,catPag:catPag}):c;});log('cartao_edit',{id:editCCId,nome:nome});}
-  else{db.cartoes.push({id:db.nid++,nome:nome,limite:limite,fecha:fecha,vence:vence,catPag:catPag});log('cartao_add',{nome:nome});}
+  if(editCCId){db.cartoes=db.cartoes.map(function(c){return c.id===editCCId?Object.assign({},c,{nome:nome,limite:limite,fecha:fecha,vence:vence}):c;});log('cartao_edit',{id:editCCId,nome:nome});}
+  else{db.cartoes.push({id:db.nid++,nome:nome,limite:limite,fecha:fecha,vence:vence});log('cartao_add',{nome:nome});}
   syncFaturas();fechar('ov-cc-cad');salvar();toast('✓ Cartão salvo!');render();
 }
 function pedirDelCartao(){

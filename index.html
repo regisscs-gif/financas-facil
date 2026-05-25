@@ -313,7 +313,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v18';
+var APP_VERSION = 'v19';
 
 var currentUser = null;
 var accessToken = null;
@@ -558,10 +558,6 @@ function periodoFatura(cc,m,y){
 function gastosCC(ccId,m,y){
   var cc=db.cartoes.find(function(c){return c.id===ccId;});
   if(!cc)return[];
-  var cfg=db.cfg||{modelo:'cal',diaInicio:1};
-  if(cfg.modelo==='custom'&&cfg.diaInicio>1){
-    return db.ccLancs.filter(function(l){return l.ccId===ccId&&pertenceCiclo(l.data,m,y);});
-  }
   var p=periodoFatura(cc,m,y);
   return db.ccLancs.filter(function(l){
     if(l.ccId!==ccId)return false;
@@ -574,19 +570,14 @@ function totalFaturaEu(ccId,m,y){return gastosCC(ccId,m,y).filter(function(l){re
 function syncFaturas(){
   db.lancs=db.lancs.filter(function(l){return l.sub!=='fat';});
   var combos={};
-  var cfg=db.cfg||{modelo:'cal',diaInicio:1};
   db.ccLancs.forEach(function(l){
     var cc=db.cartoes.find(function(c){return c.id===l.ccId;});if(!cc)return;
     var parts=l.data.split('-');var ey=+parts[0],em0=+parts[1]-1;
     for(var delta=-1;delta<=2;delta++){
       var tm=em0+delta,ty=ey;
       if(tm<0){tm+=12;ty--;}if(tm>11){tm-=12;ty++;}
-      if(cfg.modelo==='custom'&&cfg.diaInicio>1){
-        if(pertenceCiclo(l.data,tm,ty)){combos[l.ccId+':'+mesKey(tm,ty)]={ccId:l.ccId,m:tm,y:ty};break;}
-      } else {
-        var p=periodoFatura(cc,tm,ty);var d=new Date(l.data+'T12:00:00');
-        if(d>=p.ini&&d<=p.fim){combos[l.ccId+':'+mesKey(tm,ty)]={ccId:l.ccId,m:tm,y:ty};break;}
-      }
+      var p=periodoFatura(cc,tm,ty);var d=new Date(l.data+'T12:00:00');
+      if(d>=p.ini&&d<=p.fim){combos[l.ccId+':'+mesKey(tm,ty)]={ccId:l.ccId,m:tm,y:ty};break;}
     }
   });
   Object.keys(combos).forEach(function(key){
@@ -980,10 +971,7 @@ function renderFatura(ccId){
   var m=curM,y=curY;var gastos=gastosCC(ccId,m,y);
   var meus=gastos.filter(function(l){return l.titular==='eu';});var fam=gastos.filter(function(l){return l.titular==='fam';});
   var totMeu=meus.reduce(function(s,l){return s+l.val;},0);var totFam=fam.reduce(function(s,l){return s+l.val;},0);
-  var cfg2=db.cfg||{modelo:'cal',diaInicio:1};
-  var per;
-  if(cfg2.modelo==='custom'&&cfg2.diaInicio>1){per=getCicloLabel(m,y);}
-  else{var p=periodoFatura(cc,m,y);per=pad(p.ini.getDate())+'/'+pad(p.ini.getMonth()+1)+' a '+pad(p.fim.getDate())+'/'+pad(p.fim.getMonth()+1);}
+  var p=periodoFatura(cc,m,y);var per=pad(p.ini.getDate())+'/'+pad(p.ini.getMonth()+1)+' a '+pad(p.fim.getDate())+'/'+pad(p.fim.getMonth()+1);
   var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+cc.vence+'</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
     +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';

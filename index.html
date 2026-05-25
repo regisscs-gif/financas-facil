@@ -320,7 +320,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v24';
+var APP_VERSION = 'v25';
 
 var currentUser = null;
 var accessToken = null;
@@ -512,6 +512,14 @@ function pertenceCiclo(dataStr, m, y) {
   var iniStr = c.ini.getFullYear()+'-'+pad(c.ini.getMonth()+1)+'-'+pad(c.ini.getDate());
   var fimStr = c.fim.getFullYear()+'-'+pad(c.fim.getMonth()+1)+'-'+pad(c.fim.getDate());
   return dataStr >= iniStr && dataStr <= fimStr;
+}
+
+// Ajusta curM/curY para o ciclo correto ao abrir o app
+function ajustarCicloInicial() {
+  var td=hoje();
+  var nm=curM+1,ny=curY;
+  if(nm>11){nm=0;ny++;}
+  if(pertenceCiclo(td,nm,ny)){curM=nm;curY=ny;}
 }
 
 // Navegar ciclos
@@ -1196,6 +1204,7 @@ async function init(){
     await iniciarDados();
     await carregarDados();
     migrarDados();
+    ajustarCicloInicial();
     syncFaturas();
     salvar();
     render();

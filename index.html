@@ -313,7 +313,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v20';
+var APP_VERSION = 'v21';
 
 var currentUser = null;
 var accessToken = null;
@@ -975,8 +975,8 @@ function renderFatura(ccId){
   var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+cc.vence+'</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
     +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';
-  if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+'/'+lp[1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
-  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+'/'+lp[1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
+  if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
+  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
   if(!gastos.length)h+='<div class="empty">Nenhum gasto nesta fatura.<br>Toque + para adicionar.</div>';
   document.getElementById('cc-fatura-content').innerHTML=h;
 }

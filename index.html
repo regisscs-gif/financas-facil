@@ -320,7 +320,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v25';
+var APP_VERSION = 'v26';
 
 var currentUser = null;
 var accessToken = null;
@@ -465,9 +465,61 @@ var confirmCb=null,confirmCb2=null;
 
 var MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 var MABR=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-var EMO={Salário:'💰',Freelance:'💻',Investimentos:'📈',Moradia:'🏠',Alimentação:'🛒',Transporte:'🚗',Saúde:'💊',Lazer:'🎉',Educação:'📚',Vestuário:'👕',Outros:'📦','Cartão de Crédito':'💳'};
+var EMO={
+  // Receitas
+  'Salário':'💰','Salario':'💰','Renda':'💰','Renda Extra':'💼',
+  'Freelance':'💻','Consultoria':'💼','Serviço Prestado':'💼',
+  'Investimentos':'📈','Dividendos':'📊','Rendimentos':'📊',
+  'Aluguel Recebido':'🏘️','Bônus':'🎁','Bonus':'🎁','Reembolso':'🔄',
+  // Moradia
+  'Moradia':'🏠','Aluguel':'🏠','Condomínio':'🏢','Condominio':'🏢',
+  'IPTU':'🏛️','Financiamento':'🏦','Hipoteca':'🏦',
+  'Luz':'💡','Energia':'💡','Água':'💧','Agua':'💧',
+  'Gás':'🔥','Gas':'🔥','Internet':'🌐','TV':'📺',
+  'Manutenção':'🔧','Manutencao':'🔧','Reforma':'🔨',
+  // Alimentação
+  'Alimentação':'🍔','Alimentacao':'🍔','Supermercado':'🛒','Mercado':'🛒',
+  'Restaurante':'🍽️','Lanchonete':'🌮','Delivery':'🛵',
+  'Padaria':'🥐','Café':'☕','Cafe':'☕','Bar':'🍺','Bebidas':'🍺',
+  // Transporte
+  'Transporte':'🚗','Combustível':'⛽','Combustivel':'⛽','Gasolina':'⛽',
+  'Uber':'🚕','Táxi':'🚕','Taxi':'🚕','Pedágio':'🛣️','Pedagio':'🛣️',
+  'Estacionamento':'🅿️','Ônibus':'🚌','Onibus':'🚌','Metrô':'🚇','Metro':'🚇',
+  'Moto':'🏍️','Bicicleta':'🚲','Sem Parar':'🛣️',
+  // Saúde
+  'Saúde':'💊','Saude':'💊','Farmácia':'💊','Farmacia':'💊',
+  'Médico':'🏥','Medico':'🏥','Dentista':'🦷','Plano de Saúde':'🏥',
+  'Academia':'🏋️','Psicólogo':'🧠','Psicologo':'🧠','Exame':'🔬',
+  // Educação
+  'Educação':'📚','Educacao':'📚','Curso':'🎓','Livros':'📖',
+  'Faculdade':'🏫','Escola':'🏫','Treinamento':'🎓',
+  // Lazer
+  'Lazer':'🎉','Entretenimento':'🎬','Cinema':'🎬','Shows':'🎵','Música':'🎵',
+  'Streaming':'📺','Games':'🎮','Viagem':'✈️','Hotel':'🏨',
+  'Esporte':'⚽','Passeio':'🌳','Festa':'🎊',
+  // Vestuário / Beleza
+  'Vestuário':'👕','Vestuario':'👕','Roupas':'👗','Calçados':'👟','Calcados':'👟',
+  'Beleza':'💄','Higiene':'🧴','Cabeleireiro':'💇','Barbearia':'✂️',
+  // Assinaturas / Digital
+  'Assinaturas':'📱','Assinatura':'📱','Celular':'📱','Telefone':'📱',
+  // Impostos / Seguros
+  'Impostos':'📋','Imposto':'📋','Taxas':'📋','IOF':'📋',
+  'Seguro':'🛡️','Seguros':'🛡️',
+  // Pet
+  'Pet':'🐾','Animais':'🐾','Veterinário':'🐾','Veterinario':'🐾',
+  // Presentes / Doações
+  'Presente':'🎁','Presentes':'🎁','Doação':'❤️','Doacao':'❤️',
+  // Outros / CC
+  'Outros':'📦','Cartão de Crédito':'💳',
+};
 
-function emo(c){return EMO[c]||'📁';}
+function emo(c){
+  if(!c)return'📁';
+  if(EMO[c])return EMO[c];
+  var cl=c.toLowerCase(),keys=Object.keys(EMO);
+  for(var i=0;i<keys.length;i++){var k=keys[i].toLowerCase();if(k.length>=4&&cl.includes(k))return EMO[keys[i]];}
+  return'📁';
+}
 function pad(n){return n<10?'0'+n:''+n;}
 function fmt(v){return 'R$ '+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function hoje(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}

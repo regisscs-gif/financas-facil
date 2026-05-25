@@ -313,7 +313,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v17';
+var APP_VERSION = 'v18';
 
 var currentUser = null;
 var accessToken = null;
@@ -967,7 +967,7 @@ function renderParc(){
 }
 function excluirParcelamento(pid){confirmar('Remover todas as parcelas?',function(){db.lancs=db.lancs.filter(function(l){return!(l.sub==='pa'&&l.pid===+pid);});salvar();toast('Parcelamento removido!');render();});}
 function renderCCs(){
-  if(curCCId)return;var el=document.getElementById('cc-list');
+  if(curCCId){renderFatura(curCCId);return;}var el=document.getElementById('cc-list');
   if(!db.cartoes.length){el.innerHTML='<div class="empty">Nenhum cartão cadastrado.<br>Toque + para adicionar (máx. 2).</div>';return;}
   el.innerHTML=db.cartoes.map(function(cc){
     var gastos=gastosCC(cc.id,curM,curY).filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);

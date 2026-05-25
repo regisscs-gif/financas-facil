@@ -9,8 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="FinançasFácil">
 <link rel="manifest" href="/financas-facil/manifest.json">
 <link rel="apple-touch-icon" href="/financas-facil/icon-192.png">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js" integrity="sha384-qaQjoVmFCnAfbYjc3HBcZccFDyHxtBMaTqYfJkGDc+sK6oPPZS8sJeZbNs0Evucx" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" integrity="sha384-dzQgxMPp/h+N0t5qDf6Bp516wKZr3pXgGMpA7/ZM6tiWkqYo90N060L03dxnZ8Tf" crossorigin="anonymous"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;-webkit-tap-highlight-color:transparent}
 body{background:#0f1117;color:#e8eaf6;max-width:430px;margin:0 auto;min-height:100vh;padding-bottom:80px}
@@ -320,19 +320,24 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v26';
+var APP_VERSION = 'v27';
 
 var currentUser = null;
 var accessToken = null;
 var saveTimer = null;
 
+// ── SEGURANÇA ────────────────────────────────────────────
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
 // ── LOG ──────────────────────────────────────────────────
 var LOG_KEY = 'ff_log';
 var LOG_MAX = 300;
+var LOG_TTL_DAYS = 90;
 
 function log(action, data) {
   try {
-    var entries = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+    var cutoff = new Date(Date.now() - LOG_TTL_DAYS * 86400000).toISOString();
+    var entries = JSON.parse(localStorage.getItem(LOG_KEY) || '[]').filter(function(e){return e.ts >= cutoff;});
     entries.push({ ts: new Date().toISOString(), action: action, data: data || null });
     if (entries.length > LOG_MAX) entries = entries.slice(-LOG_MAX);
     localStorage.setItem(LOG_KEY, JSON.stringify(entries));
@@ -982,7 +987,7 @@ function mostrarPreviewCSV(text){
     :csvImportBuffer.map(function(r){
       var lp=r.data.split('-');
       return '<div class="it" style="cursor:default"><div class="iinfo">'
-        +'<div class="iname" style="font-size:13px">'+r.lancamento+'</div>'
+        +'<div class="iname" style="font-size:13px">'+escHtml(r.lancamento)+'</div>'
         +'<div class="isub">'+lp[2]+' '+MABR[+lp[1]-1]+' '+lp[0]+'</div>'
         +'</div><div class="ival r">-'+fmt(r.valor)+'</div></div>';
     }).join('');
@@ -1008,13 +1013,13 @@ function itemLancHTML(l){
   var isR=l.tipo==='r';var p=l.data.split('-');
   if(l.sub==='fat'){
     return '<div class="it"><div class="ico" style="background:rgba(108,99,255,.15)">💳</div>'
-      +'<div class="iinfo"><div class="iname">'+l.desc+'<span class="tag" style="background:rgba(108,99,255,.2);color:#a78bfa;font-size:9px;margin-left:4px">AUTO</span></div><div class="isub">'+l.cat+' · '+p[2]+'/'+p[1]+'</div></div>'
+      +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+'<span class="tag" style="background:rgba(108,99,255,.2);color:#a78bfa;font-size:9px;margin-left:4px">AUTO</span></div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
       +'<div class="ival" style="color:#ef476f">-'+fmt(l.val)+'</div>'
       +'<div style="width:32px"></div></div>';
   }
   var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(l.cat)+'</div>'
-    +'<div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+p[2]+'/'+p[1]+'</div></div>'
+    +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'
     +'<button class="ebtn" onclick="abrirEditarLanc('+l.id+')">✏️</button></div>';
 }
@@ -1022,7 +1027,7 @@ function itemFixoMesHTML(f,mk){
   var isR=f.tipo==='r';var dia=f.dia?pad(f.dia)+'/'+mk.split('-')[1]:'—';
   var ov=f.override?'<span class="tag" style="background:rgba(108,99,255,.2);color:#6c63ff">Editado</span>':'<span class="tag tfix">Fixo</span>';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(f.cat)+'</div>'
-    +'<div class="iinfo"><div class="iname">'+f.desc+ov+'</div><div class="isub">'+f.cat+' · dia '+dia+'</div></div>'
+    +'<div class="iinfo"><div class="iname">'+escHtml(f.desc)+ov+'</div><div class="isub">'+escHtml(f.cat)+' · dia '+dia+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(f.val)+'</div>'
     +'<button class="ebtn" onclick="abrirEditarOcorr('+f.gid+',\''+mk+'\')">✏️</button></div>';
 }
@@ -1062,10 +1067,10 @@ function renderFixos(){
     h+='<div class="card">';
     [['r',recs,'↑ Receitas fixas','rgba(6,214,160,.15)','#06d6a0','+'],['e',exps,'↓ Despesas fixas','rgba(239,71,111,.15)','#ef476f','-']].forEach(function(c){
       if(!c[1].length)return;h+='<div class="sec">'+c[2]+'</div>';
-      c[1].forEach(function(f){h+='<div class="it"><div class="ico" style="background:'+c[3]+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+f.desc+'<span class="tag tfix">Fixo</span></div><div class="isub">'+f.cat+' · dia '+pad(f.dia||1)+'</div></div><div class="ival" style="color:'+c[4]+'">'+c[5]+fmt(f.val)+'</div><button class="ebtn" onclick="abrirEditarFixo('+f.gid+')">✏️</button></div>';});
+      c[1].forEach(function(f){h+='<div class="it"><div class="ico" style="background:'+c[3]+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(f.desc)+'<span class="tag tfix">Fixo</span></div><div class="isub">'+escHtml(f.cat)+' · dia '+pad(f.dia||1)+'</div></div><div class="ival" style="color:'+c[4]+'">'+c[5]+fmt(f.val)+'</div><button class="ebtn" onclick="abrirEditarFixo('+f.gid+')">✏️</button></div>';});
     });h+='</div>';
   }
-  if(encerrados.length){h+='<div class="card" style="opacity:.5"><div class="sec">⏹ Encerrados</div>';encerrados.forEach(function(f){var isR=f.tipo==='r';h+='<div class="it" style="cursor:default"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.1)':'rgba(239,71,111,.1)')+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+f.desc+'</div><div class="isub">Encerrado</div></div><div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(f.val)+'</div></div>';});h+='</div>';}
+  if(encerrados.length){h+='<div class="card" style="opacity:.5"><div class="sec">⏹ Encerrados</div>';encerrados.forEach(function(f){var isR=f.tipo==='r';h+='<div class="it" style="cursor:default"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.1)':'rgba(239,71,111,.1)')+'">'+emo(f.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(f.desc)+'</div><div class="isub">Encerrado</div></div><div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(f.val)+'</div></div>';});h+='</div>';}
   el.innerHTML=h||'<div class="empty">Nenhum fixo. Toque + para criar.</div>';
 }
 function renderParc(){
@@ -1073,7 +1078,7 @@ function renderParc(){
   var td=hoje();var el=document.getElementById('p-list');var keys=Object.keys(grupos);
   if(!keys.length){el.innerHTML='<div class="empty">Nenhum parcelamento.</div>';return;}
   el.innerHTML=keys.map(function(k){var g=grupos[k],pg=g.items.filter(function(l){return l.data<=td;}).length,pct=Math.round((pg/g.pt)*100);var total=g.total||(g.val*g.pt);
-    return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+emo(g.cat)+' '+g.desc+'</b><div style="display:flex;align-items:center;gap:8px"><span class="tag tprc">'+pg+'/'+g.pt+'</span><button onclick="excluirParcelamento('+k+')" style="background:none;border:none;color:#7b80a0;cursor:pointer;font-size:16px">🗑</button></div></div><div style="font-size:11px;color:#7b80a0;margin-top:4px">'+fmt(g.val)+'/parcela · Total: '+fmt(total)+'</div><div class="pw"><div class="pb" style="width:'+pct+'%;background:#6c63ff"></div></div><div style="font-size:11px;color:#7b80a0;margin-top:3px">'+pct+'% concluído</div></div>';
+    return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+emo(g.cat)+' '+escHtml(g.desc)+'</b><div style="display:flex;align-items:center;gap:8px"><span class="tag tprc">'+pg+'/'+g.pt+'</span><button onclick="excluirParcelamento('+k+')" style="background:none;border:none;color:#7b80a0;cursor:pointer;font-size:16px">🗑</button></div></div><div style="font-size:11px;color:#7b80a0;margin-top:4px">'+fmt(g.val)+'/parcela · Total: '+fmt(total)+'</div><div class="pw"><div class="pb" style="width:'+pct+'%;background:#6c63ff"></div></div><div style="font-size:11px;color:#7b80a0;margin-top:3px">'+pct+'% concluído</div></div>';
   }).join('');
 }
 function excluirParcelamento(pid){confirmar('Remover todas as parcelas?',function(){db.lancs=db.lancs.filter(function(l){return!(l.sub==='pa'&&l.pid===+pid);});salvar();toast('Parcelamento removido!');render();});}
@@ -1083,7 +1088,7 @@ function renderCCs(){
   el.innerHTML=db.cartoes.map(function(cc){
     var gastos=gastosCC(cc.id,curM,curY).filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);
     var pct=cc.limite>0?Math.min(100,Math.round((gastos/cc.limite)*100)):0;
-    return '<div class="cc-card" onclick="verCartao('+cc.id+')"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-name">'+cc.nome+'</div><div class="cc-limit">Limite: '+fmt(cc.limite)+' · Fecha dia '+cc.fecha+'</div></div><button onclick="event.stopPropagation();abrirCadCartao('+cc.id+')" style="background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:12px">✏️</button></div><div class="cc-used">'+fmt(gastos)+'</div><div style="font-size:11px;color:#a5b4fc;margin-top:2px">fatura atual (somente seus)</div><div class="cc-bar"><div class="cc-bar-fill" style="width:'+pct+'%"></div></div><div style="font-size:10px;color:#a5b4fc;margin-top:4px">'+pct+'% do limite · Toque para ver fatura</div></div>';
+    return '<div class="cc-card" onclick="verCartao('+cc.id+')"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-name">'+escHtml(cc.nome)+'</div><div class="cc-limit">Limite: '+fmt(cc.limite)+' · Fecha dia '+cc.fecha+'</div></div><button onclick="event.stopPropagation();abrirCadCartao('+cc.id+')" style="background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:12px">✏️</button></div><div class="cc-used">'+fmt(gastos)+'</div><div style="font-size:11px;color:#a5b4fc;margin-top:2px">fatura atual (somente seus)</div><div class="cc-bar"><div class="cc-bar-fill" style="width:'+pct+'%"></div></div><div style="font-size:10px;color:#a5b4fc;margin-top:4px">'+pct+'% do limite · Toque para ver fatura</div></div>';
   }).join('');
 }
 function renderFatura(ccId){
@@ -1095,8 +1100,8 @@ function renderFatura(ccId){
   var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+cc.vence+'</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
     +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';
-  if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
-  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+l.desc+tag+'</div><div class="isub">'+l.cat+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
+  if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
+  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
   if(!gastos.length)h+='<div class="empty">Nenhum gasto nesta fatura.<br>Toque + para adicionar.</div>';
   document.getElementById('cc-fatura-content').innerHTML=h;
 }
@@ -1197,7 +1202,7 @@ function renderProj(){
     var pct=Math.round((e.val/maxE)*100);
     return '<div style="margin-bottom:8px">'
       +'<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">'
-      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%">'+emo(e.cat)+' '+e.desc+'</span>'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%">'+emo(e.cat)+' '+escHtml(e.desc)+'</span>'
       +'<span style="color:#ef476f;font-weight:700;flex-shrink:0">-'+fmt(e.val)+'</span></div>'
       +'<div style="background:#22263a;border-radius:99px;height:5px">'
       +'<div style="width:'+pct+'%;background:#ef476f;border-radius:99px;height:100%"></div></div></div>';

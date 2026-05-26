@@ -158,7 +158,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <button onclick="voltarCartoes()" style="background:#22263a;border:none;color:#e8eaf6;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px">← Voltar</button>
         <span style="font-weight:700;font-size:15px" id="cc-fatura-titulo"></span>
-        <button onclick="abrirImportCSV()" style="margin-left:auto;background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px">📂 CSV</button>
       </div>
       <div id="cc-fatura-content"></div>
     </div>
@@ -351,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v35';
+var APP_VERSION = 'v36';
 
 var currentUser = null;
 var accessToken = null;

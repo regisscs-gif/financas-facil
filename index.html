@@ -141,7 +141,12 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 vs 💰 Gastos por categoria</div><div id="proj-cccat"></div></div>
   </div>
 
-  <div class="page" id="pg-lanc"><div id="l-list"></div></div>
+  <div class="page" id="pg-lanc">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <button onclick="abrirImportSelector()" style="background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📂 Importar</button>
+    </div>
+    <div id="l-list"></div>
+  </div>
   <div class="page" id="pg-fix">
     <div class="info-box" style="margin-bottom:10px">💡 Fixos valem por tempo indeterminado. Editar replica para os próximos meses. Encerrar preserva o histórico.</div>
     <div id="fix-list"></div>
@@ -188,11 +193,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
         <input id="nce" placeholder="Nova categoria...">
         <button onclick="addCat('e')" style="background:#ef476f;border:none;color:#fff;padding:9px 14px;border-radius:10px;font-weight:700;cursor:pointer">+</button>
       </div>
-    </div>
-    <div class="card">
-      <div style="font-size:15px;font-weight:700;margin-bottom:8px">📂 Importar Extrato</div>
-      <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Importe extratos da conta corrente em formato XLS ou CSV (Itaú).</div>
-      <button class="sbtn" onclick="abrirImportExtrato()">Selecionar arquivo (.xls / .csv)</button>
     </div>
     <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:4px">🪵 Log de atividade</div>
@@ -310,6 +310,22 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-import-select">
+  <div class="mod">
+    <h3>Importar lançamentos</h3>
+    <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Conta corrente</div>
+      <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Extrato em XLS ou CSV (Itaú e outros)</div>
+      <button class="sbtn" style="margin-top:0" onclick="fechar('ov-import-select');abrirImportExtrato()">Selecionar arquivo</button>
+    </div>
+    <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px">💳 Cartão de crédito</div>
+      <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Fatura em CSV</div>
+      <div id="imp-cc-sel"></div>
+    </div>
+    <button class="cbtn" onclick="fechar('ov-import-select')">Cancelar</button>
+  </div>
+</div>
 <div class="ov" id="ov-import-extrato">
   <div class="mod">
     <h3>Importar extrato</h3>
@@ -335,7 +351,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v34';
+var APP_VERSION = 'v35';
 
 var currentUser = null;
 var accessToken = null;
@@ -1029,7 +1045,7 @@ function confirmarImportCSV(){
   log('csv_import',{ccId:curCCId,count:csvImportBuffer.length});
   syncFaturas();fechar('ov-import-csv');salvar();
   toast('✓ '+csvImportBuffer.length+' lançamento'+(csvImportBuffer.length!==1?'s':'')+' importado'+(csvImportBuffer.length!==1?'s':'')+'!');
-  csvImportBuffer=[];renderFatura(curCCId);
+  csvImportBuffer=[];render();
 }
 
 // ── IMPORT EXTRATO ───────────────────────────────────────
@@ -1046,6 +1062,18 @@ function autoCatExtrato(desc,tipo){
   if(/HOSPITAL|CLINIC|MEDIC|DENT|SAUDE|LABORATORIO|EXAME|FARMAC|DROGA/.test(d))return 'Saúde';
   return(db.catsE&&db.catsE.length)?db.catsE[db.catsE.length-1]:'Outros';
 }
+function abrirImportSelector(){
+  var ccEl=document.getElementById('imp-cc-sel');
+  if(!db.cartoes.length){
+    ccEl.innerHTML='<div style="font-size:12px;color:#7b80a0">Nenhum cartão cadastrado.</div>';
+  }else{
+    ccEl.innerHTML=db.cartoes.map(function(cc){
+      return '<button class="sbtn" style="margin-top:0;margin-bottom:6px" onclick="importarFaturaCC('+cc.id+')">'+escHtml(cc.nome)+'</button>';
+    }).join('');
+  }
+  document.getElementById('ov-import-select').classList.add('on');
+}
+function importarFaturaCC(ccId){curCCId=ccId;fechar('ov-import-select');abrirImportCSV();}
 function abrirImportExtrato(){document.getElementById('extrato-file-input').value='';document.getElementById('extrato-file-input').click();}
 document.getElementById('extrato-file-input').addEventListener('change',function(e){
   var file=e.target.files[0];if(!file)return;

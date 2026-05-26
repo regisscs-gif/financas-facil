@@ -320,7 +320,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v30';
+var APP_VERSION = 'v31';
 
 var currentUser = null;
 var accessToken = null;
@@ -1119,7 +1119,9 @@ function renderProj(){
   var dados=[];
   for(var i=0;i<6;i++){
     var mm=(curM+i)%12,aa=curY+Math.floor((curM+i)/12);
-    dados.push({m:mm,y:aa,r:somaR(mm,aa),e:somaE(mm,aa)});
+    var eCC=lancsDoMes(mm,aa).filter(function(l){return l.tipo==='e'&&l.sub==='fat';}).reduce(function(s,l){return s+l.val;},0);
+    var eTot=somaE(mm,aa);
+    dados.push({m:mm,y:aa,r:somaR(mm,aa),e:eTot,eCC:eCC,eDeb:eTot-eCC});
   }
 
   // formata valor compacto para gráficos
@@ -1132,27 +1134,39 @@ function renderProj(){
   var h1=dados.map(function(d){
     var sal=d.r-d.e,cor=sal>=0?'#06d6a0':'#ef476f';
     var label=MABR[d.m]+(d.y!==curY?' '+d.y:'');
-    var rPct=Math.round((d.r/maxRE)*100),ePct=Math.round((d.e/maxRE)*100);
-    return '<div style="margin-bottom:12px">'
+    var rPct=Math.round((d.r/maxRE)*100);
+    var debPct=Math.round((d.eDeb/maxRE)*100);
+    var ccPct=Math.round((d.eCC/maxRE)*100);
+    var html='<div style="margin-bottom:12px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
       +'<span style="font-size:13px;font-weight:700;color:#e8eaf6">'+label+'</span>'
       +'<span style="font-size:12px;font-weight:700;color:'+cor+'">'+(sal>=0?'+':'')+fmt(sal)+'</span></div>'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
       +'<div style="width:8px;height:8px;background:#06d6a0;border-radius:2px;flex-shrink:0"></div>'
       +'<div style="flex:1;background:#22263a;border-radius:99px;height:9px"><div style="width:'+rPct+'%;background:#06d6a0;border-radius:99px;height:100%"></div></div>'
-      +'<span style="font-size:11px;color:#06d6a0;min-width:72px;text-align:right">'+fmt(d.r)+'</span></div>'
-      +'<div style="display:flex;align-items:center;gap:6px">'
-      +'<div style="width:8px;height:8px;background:#ef476f;border-radius:2px;flex-shrink:0"></div>'
-      +'<div style="flex:1;background:#22263a;border-radius:99px;height:9px"><div style="width:'+ePct+'%;background:#ef476f;border-radius:99px;height:100%"></div></div>'
-      +'<span style="font-size:11px;color:#ef476f;min-width:72px;text-align:right">'+fmt(d.e)+'</span></div>'
-      +'</div>';
+      +'<span style="font-size:11px;color:#06d6a0;min-width:72px;text-align:right">'+fmt(d.r)+'</span></div>';
+    if(d.eDeb>0){
+      html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+        +'<div style="width:8px;height:8px;background:#ef476f;border-radius:2px;flex-shrink:0"></div>'
+        +'<div style="flex:1;background:#22263a;border-radius:99px;height:9px"><div style="width:'+debPct+'%;background:#ef476f;border-radius:99px;height:100%"></div></div>'
+        +'<span style="font-size:11px;color:#ef476f;min-width:72px;text-align:right">'+fmt(d.eDeb)+'</span></div>';
+    }
+    if(d.eCC>0){
+      html+='<div style="display:flex;align-items:center;gap:6px">'
+        +'<div style="width:8px;height:8px;background:#a5b4fc;border-radius:2px;flex-shrink:0"></div>'
+        +'<div style="flex:1;background:#22263a;border-radius:99px;height:9px"><div style="width:'+ccPct+'%;background:#a5b4fc;border-radius:99px;height:100%"></div></div>'
+        +'<span style="font-size:11px;color:#a5b4fc;min-width:72px;text-align:right">'+fmt(d.eCC)+'</span></div>';
+    }
+    html+='</div>';
+    return html;
   }).join('');
   document.getElementById('proj-re').innerHTML=h1;
 
   // ── 2. Donut por categoria ──
   var catMap={};
-  lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e';}).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});
+  lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub!=='fat';}).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});
   fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).forEach(function(f){catMap[f.cat]=(catMap[f.cat]||0)+f.val;});
+  db.cartoes.forEach(function(cc){gastosCC(cc.id,curM,curY).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});});
   var cats=Object.keys(catMap).map(function(k){return{cat:k,val:catMap[k]};}).sort(function(a,b){return b.val-a.val;});
   var totE=cats.reduce(function(s,e){return s+e.val;},0);
   var h3;

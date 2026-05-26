@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v39';
+var APP_VERSION = 'v40';
 
 var currentUser = null;
 var accessToken = null;
@@ -1083,9 +1083,9 @@ document.getElementById('extrato-file-input').addEventListener('change',function
   if(ext==='xls'||ext==='xlsx'){
     if(typeof XLSX==='undefined'){
       var s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js';
+      s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
       s.onload=function(){lerXLS(file);};
-      s.onerror=function(){toast('Erro ao carregar leitor de XLS. Tente exportar o extrato como CSV.');};
+      s.onerror=function(){toast('Sem conexão para carregar leitor XLS. Exporte o extrato como CSV e tente novamente.');};
       document.head.appendChild(s);
     }else{lerXLS(file);}
   }else{
@@ -1100,12 +1100,15 @@ document.getElementById('extrato-file-input').addEventListener('change',function
 function lerXLS(file){
   var reader=new FileReader();
   reader.onload=function(ev){
-    var wb=XLSX.read(ev.target.result,{type:'binary'});
-    var ws=wb.Sheets[wb.SheetNames[0]];
-    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
-    parsearLinhasExtrato(rows);
+    try{
+      var data=new Uint8Array(ev.target.result);
+      var wb=XLSX.read(data,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+      parsearLinhasExtrato(rows);
+    }catch(e){toast('Erro ao ler o arquivo XLS. Tente exportar como CSV.');}
   };
-  reader.readAsBinaryString(file);
+  reader.readAsArrayBuffer(file);
 }
 function parsearLinhasExtrato(rows){
   var existingKeys={};

@@ -320,7 +320,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v29';
+var APP_VERSION = 'v30';
 
 var currentUser = null;
 var accessToken = null;
@@ -950,6 +950,14 @@ function verCartao(ccId){curCCId=ccId;document.getElementById('cc-list').style.d
 function voltarCartoes(){curCCId=null;document.getElementById('cc-list').style.display='block';document.getElementById('cc-fatura-wrap').style.display='none';}
 
 var csvImportBuffer=[];
+function ajustarDataParcela(lancamento,data){
+  var m=lancamento.match(/\bI(\d{1,2})\/(\d{1,2})$/i);
+  if(!m)return data;
+  var n=parseInt(m[1],10);if(n<1)return data;
+  var parts=data.split('-');
+  var adj=new Date(parseInt(parts[0]),parseInt(parts[1])-1+(n-1),parseInt(parts[2]));
+  return adj.getFullYear()+'-'+pad(adj.getMonth()+1)+'-'+pad(adj.getDate());
+}
 function abrirImportCSV(){document.getElementById('csv-file-input').value='';document.getElementById('csv-file-input').click();}
 document.getElementById('csv-file-input').addEventListener('change',function(e){
   var file=e.target.files[0];if(!file)return;
@@ -974,7 +982,8 @@ function mostrarPreviewCSV(text){
     if(valor<=0){pagamentos++;return;}
     var key=data+'|'+lancamento+'|'+valor;
     if(existingKeys[key]){duplicados++;return;}
-    csvImportBuffer.push({data:data,lancamento:lancamento,valor:valor,csvKey:key});
+    var dataAdj=ajustarDataParcela(lancamento,data);
+    csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key});
   });
   var n=csvImportBuffer.length;
   document.getElementById('import-summary').innerHTML=

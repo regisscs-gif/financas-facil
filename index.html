@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v38';
+var APP_VERSION = 'v39';
 
 var currentUser = null;
 var accessToken = null;
@@ -1084,9 +1084,8 @@ document.getElementById('extrato-file-input').addEventListener('change',function
     if(typeof XLSX==='undefined'){
       var s=document.createElement('script');
       s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js';
-      s.integrity='sha512-c7v2mEghMrX9YKC1iSb93skFX4CVpTvFJxTiEek0DDQZc2zq/WsnlmeBARTTBr/M3Pzd9RwLZ/6ePHPFRYPldA==';
-      s.crossOrigin='anonymous';
       s.onload=function(){lerXLS(file);};
+      s.onerror=function(){toast('Erro ao carregar leitor de XLS. Tente exportar o extrato como CSV.');};
       document.head.appendChild(s);
     }else{lerXLS(file);}
   }else{

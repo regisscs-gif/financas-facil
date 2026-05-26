@@ -315,7 +315,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
       <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Conta corrente</div>
       <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Extrato em XLS ou CSV (Itaú e outros)</div>
-      <button class="sbtn" style="margin-top:0" onclick="fechar('ov-import-select');abrirImportExtrato()">Selecionar arquivo</button>
+      <label for="extrato-file-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportExtrato()">Selecionar arquivo</label>
     </div>
     <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
       <div style="font-size:13px;font-weight:700;margin-bottom:4px">💳 Cartão de crédito</div>
@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v36';
+var APP_VERSION = 'v37';
 
 var currentUser = null;
 var accessToken = null;
@@ -1067,12 +1067,13 @@ function abrirImportSelector(){
     ccEl.innerHTML='<div style="font-size:12px;color:#7b80a0">Nenhum cartão cadastrado.</div>';
   }else{
     ccEl.innerHTML=db.cartoes.map(function(cc){
-      return '<button class="sbtn" style="margin-top:0;margin-bottom:6px" onclick="importarFaturaCC('+cc.id+')">'+escHtml(cc.nome)+'</button>';
+      return '<label for="csv-file-input" class="sbtn" style="margin-top:0;margin-bottom:6px;display:block;text-align:center;cursor:pointer" data-ccid="'+cc.id+'" onclick="prepImportCC(this)">'+escHtml(cc.nome)+'</label>';
     }).join('');
   }
   document.getElementById('ov-import-select').classList.add('on');
 }
-function importarFaturaCC(ccId){curCCId=ccId;fechar('ov-import-select');abrirImportCSV();}
+function prepImportCC(el){curCCId=+el.dataset.ccid;document.getElementById('csv-file-input').value='';fechar('ov-import-select');}
+function prepImportExtrato(){document.getElementById('extrato-file-input').value='';fechar('ov-import-select');}
 function abrirImportExtrato(){document.getElementById('extrato-file-input').value='';document.getElementById('extrato-file-input').click();}
 document.getElementById('extrato-file-input').addEventListener('change',function(e){
   var file=e.target.files[0];if(!file)return;

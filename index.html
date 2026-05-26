@@ -190,6 +190,11 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       </div>
     </div>
     <div class="card">
+      <div style="font-size:15px;font-weight:700;margin-bottom:8px">📂 Importar Extrato</div>
+      <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Importe extratos da conta corrente em formato XLS ou CSV (Itaú).</div>
+      <button class="sbtn" onclick="abrirImportExtrato()">Selecionar arquivo (.xls / .csv)</button>
+    </div>
+    <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:4px">🪵 Log de atividade</div>
       <div style="font-size:11px;color:#7b80a0;margin-bottom:10px">Últimas 80 ações. Copie e envie ao suporte para reportar problemas.</div>
       <div id="log-entries" style="max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
@@ -209,6 +214,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 </div>
 
 <input type="file" id="csv-file-input" accept=".csv" style="display:none">
+<input type="file" id="extrato-file-input" accept=".xls,.xlsx,.csv" style="display:none">
 
 <!-- MODAIS -->
 <div class="ov" id="ov-lanc">
@@ -304,6 +310,15 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-import-extrato">
+  <div class="mod">
+    <h3>Importar extrato</h3>
+    <div id="ext-summary" style="font-size:12px;color:#7b80a0;margin-bottom:12px;padding:10px;background:#22263a;border-radius:8px;line-height:1.8"></div>
+    <div id="ext-preview" style="max-height:340px;overflow-y:auto;margin-bottom:12px"></div>
+    <button class="sbtn" id="ext-confirm-btn" onclick="confirmarImportExtrato()">Importar</button>
+    <button class="cbtn" onclick="fechar('ov-import-extrato')">Cancelar</button>
+  </div>
+</div>
 <div class="ov" id="ov-import-csv">
   <div class="mod">
     <h3>Importar fatura CSV</h3>
@@ -320,7 +335,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v32';
+var APP_VERSION = 'v33';
 
 var currentUser = null;
 var accessToken = null;
@@ -1017,6 +1032,137 @@ function confirmarImportCSV(){
   csvImportBuffer=[];renderFatura(curCCId);
 }
 
+// ── IMPORT EXTRATO ───────────────────────────────────────
+var extratoImportBuffer=[];
+function autoCatExtrato(desc,tipo){
+  var d=desc.toUpperCase();
+  if(tipo==='r'){
+    if(/COR RENDIMENTO|JUROS POUP|REMUNER BASICA POUP/.test(d))return 'Investimentos';
+    return(db.catsR&&db.catsR.length)?db.catsR[0]:'Outros';
+  }
+  if(/FINANC IMOBILIARIO/.test(d))return 'Moradia';
+  if(/SUPERMERCADO|MERCADO|SUPER |ATACADO/.test(d))return 'Alimentação';
+  if(/UBER|99POP|TAXI|POSTO|COMBUST/.test(d))return 'Transporte';
+  if(/HOSPITAL|CLINIC|MEDIC|DENT|SAUDE|LABORATORIO|EXAME|FARMAC|DROGA/.test(d))return 'Saúde';
+  return(db.catsE&&db.catsE.length)?db.catsE[db.catsE.length-1]:'Outros';
+}
+function abrirImportExtrato(){document.getElementById('extrato-file-input').value='';document.getElementById('extrato-file-input').click();}
+document.getElementById('extrato-file-input').addEventListener('change',function(e){
+  var file=e.target.files[0];if(!file)return;
+  var ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='xls'||ext==='xlsx'){
+    if(typeof XLSX==='undefined'){
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js';
+      s.integrity='sha512-c7v2mEghMrX9YKC1iSb93skFX4CVpTvFJxTiEek0DDQZc2zq/WsnlmeBARTTBr/M3Pzd9RwLZ/6ePHPFRYPldA==';
+      s.crossOrigin='anonymous';
+      s.onload=function(){lerXLS(file);};
+      document.head.appendChild(s);
+    }else{lerXLS(file);}
+  }else{
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      var linhas=ev.target.result.trim().split('\n').map(function(l){return l.split(/[;,]/);});
+      parsearLinhasExtrato(linhas);
+    };
+    reader.readAsText(file,'UTF-8');
+  }
+});
+function lerXLS(file){
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var wb=XLSX.read(ev.target.result,{type:'binary'});
+    var ws=wb.Sheets[wb.SheetNames[0]];
+    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+    parsearLinhasExtrato(rows);
+  };
+  reader.readAsBinaryString(file);
+}
+function parsearLinhasExtrato(rows){
+  var existingKeys={};
+  db.lancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+  extratoImportBuffer=[];
+  var dupCount=0;
+  rows.forEach(function(cols){
+    if(!cols||cols.length<4)return;
+    var dataRaw=String(cols[0]||'').trim();
+    var desc=String(cols[1]||'').trim();
+    var valRaw=String(cols[3]||'').trim();
+    if(!dataRaw||!desc||!valRaw)return;
+    if(!/\d/.test(dataRaw))return;
+    if(/SALDO/i.test(desc)||/lançamento/i.test(desc))return;
+    var dp=dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if(!dp)return;
+    var data=dp[3]+'-'+dp[2]+'-'+dp[1];
+    var valStr=valRaw.replace(/\./g,'').replace(',','.').replace(/[^0-9.\-]/g,'');
+    var val=parseFloat(valStr);
+    if(isNaN(val)||val===0)return;
+    var tipo=val>0?'r':'e';
+    var valAbs=Math.abs(Math.round(val*100)/100);
+    var csvKey=data+'|'+desc+'|'+valAbs;
+    if(existingKeys[csvKey]){dupCount++;return;}
+    var isFatura=/FATURA PAGA/i.test(desc);
+    var cat=autoCatExtrato(desc,tipo);
+    extratoImportBuffer.push({data:data,desc:desc,cat:cat,val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
+  });
+  extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});
+  mostrarPreviewExtrato(dupCount);
+}
+function extratoSetDesc(i,v){extratoImportBuffer[i].desc=v;}
+function extratoSetCat(i,v){extratoImportBuffer[i].cat=v;}
+function extratoSetInclude(i,c){extratoImportBuffer[i].include=c;atualizarBtnExtrato();}
+function atualizarBtnExtrato(){
+  var n=extratoImportBuffer.filter(function(r){return r.include;}).length;
+  var btn=document.getElementById('ext-confirm-btn');
+  btn.textContent=n>0?'Importar '+n+' lançamento'+(n!==1?'s':''):'Nenhum selecionado';
+  btn.disabled=n===0;
+}
+function mostrarPreviewExtrato(dupCount){
+  var n=extratoImportBuffer.length;
+  document.getElementById('ext-summary').innerHTML=
+    '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b><br>'
+    +'<span>'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>';
+  if(n===0){
+    document.getElementById('ext-preview').innerHTML='<div class="empty">Nenhum lançamento novo encontrado.</div>';
+  }else{
+    document.getElementById('ext-preview').innerHTML=extratoImportBuffer.map(function(r,i){
+      var p=r.data.split('-');
+      var cor=r.tipo==='r'?'#06d6a0':'#ef476f';
+      var sinal=r.tipo==='r'?'+':'-';
+      var opts=(r.tipo==='r'?db.catsR:db.catsE).map(function(c){
+        return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';
+      }).join('');
+      var faturaNote=r.isFatura?'<span style="font-size:9px;color:#a5b4fc;margin-left:4px">já no cartão</span>':'';
+      return '<div style="display:flex;gap:6px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #2a2f4a">'
+        +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="extratoSetInclude('+i+',this.checked)" style="margin-top:4px;flex-shrink:0">'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">'
+        +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
+        +faturaNote
+        +'<span style="font-size:10px;color:'+cor+';margin-left:auto;font-weight:700">'+sinal+fmt(r.val)+'</span>'
+        +'</div>'
+        +'<input type="text" value="'+escHtml(r.desc)+'" oninput="extratoSetDesc('+i+',this.value)" style="width:100%;font-size:12px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:5px 8px;color:#e8eaf6;box-sizing:border-box;margin-bottom:4px">'
+        +'<select onchange="extratoSetCat('+i+',this.value)" style="width:100%;font-size:11px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:4px 6px;color:#e8eaf6">'+opts+'</select>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+  }
+  atualizarBtnExtrato();
+  document.getElementById('ov-import-extrato').classList.add('on');
+}
+function confirmarImportExtrato(){
+  var itens=extratoImportBuffer.filter(function(r){return r.include;});
+  if(!itens.length)return;
+  itens.forEach(function(r){
+    db.lancs.push({id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey});
+  });
+  db.lancs.sort(function(a,b){return b.data.localeCompare(a.data);});
+  log('extrato_import',{count:itens.length});
+  fechar('ov-import-extrato');salvar();
+  toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
+  extratoImportBuffer=[];render();
+}
+
 // ── RENDER ───────────────────────────────────────────────
 function itemLancHTML(l){
   var isR=l.tipo==='r';var p=l.data.split('-');
@@ -1026,7 +1172,7 @@ function itemLancHTML(l){
       +'<div class="ival" style="color:#ef476f">-'+fmt(l.val)+'</div>'
       +'<div style="width:32px"></div></div>';
   }
-  var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';
+  var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':l.sub==='imp'?'<span class="tag" style="background:rgba(6,214,160,.15);color:#06d6a0;font-size:9px">EXT</span>':'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(6,214,160,.15)':'rgba(239,71,111,.15)')+'">'+emo(l.cat)+'</div>'
     +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#06d6a0':'#ef476f')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'

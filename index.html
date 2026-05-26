@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v37';
+var APP_VERSION = 'v38';
 
 var currentUser = null;
 var accessToken = null;
@@ -991,6 +991,7 @@ function ajustarDataParcela(lancamento,data){
 function abrirImportCSV(){document.getElementById('csv-file-input').value='';document.getElementById('csv-file-input').click();}
 document.getElementById('csv-file-input').addEventListener('change',function(e){
   var file=e.target.files[0];if(!file)return;
+  fechar('ov-import-select');
   var reader=new FileReader();
   reader.onload=function(ev){mostrarPreviewCSV(ev.target.result);};
   reader.readAsText(file,'UTF-8');
@@ -1072,11 +1073,12 @@ function abrirImportSelector(){
   }
   document.getElementById('ov-import-select').classList.add('on');
 }
-function prepImportCC(el){curCCId=+el.dataset.ccid;document.getElementById('csv-file-input').value='';fechar('ov-import-select');}
-function prepImportExtrato(){document.getElementById('extrato-file-input').value='';fechar('ov-import-select');}
+function prepImportCC(el){curCCId=+el.dataset.ccid;document.getElementById('csv-file-input').value='';}
+function prepImportExtrato(){document.getElementById('extrato-file-input').value='';}
 function abrirImportExtrato(){document.getElementById('extrato-file-input').value='';document.getElementById('extrato-file-input').click();}
 document.getElementById('extrato-file-input').addEventListener('change',function(e){
   var file=e.target.files[0];if(!file)return;
+  fechar('ov-import-select');
   var ext=file.name.split('.').pop().toLowerCase();
   if(ext==='xls'||ext==='xlsx'){
     if(typeof XLSX==='undefined'){

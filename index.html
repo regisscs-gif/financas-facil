@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v41';
+var APP_VERSION = 'v42';
 
 var currentUser = null;
 var accessToken = null;
@@ -1110,6 +1110,26 @@ function lerXLS(file){
   };
   reader.readAsArrayBuffer(file);
 }
+function parseValorExtrato(str){
+  str=String(str).replace(/[R$\s ]/g,'').trim();
+  if(!str)return NaN;
+  var neg=str.charAt(0)==='-';
+  str=str.replace(/^[+-]/,'');
+  var hasDot=str.indexOf('.')!==-1,hasComma=str.indexOf(',')!==-1;
+  if(hasDot&&hasComma){
+    if(str.lastIndexOf('.')>str.lastIndexOf(','))str=str.replace(/,/g,'');
+    else str=str.replace(/\./g,'').replace(',','.');
+  }else if(hasComma){
+    var p=str.split(',');
+    if(p.length===2&&p[1].length===3&&/^\d+$/.test(p[1]))str=str.replace(',','');
+    else str=str.replace(',','.');
+  }else if(hasDot){
+    var p=str.split('.');
+    if(p.length===2&&p[1].length===3&&/^\d+$/.test(p[1]))str=str.replace('.','');
+  }
+  var v=parseFloat(str);
+  return neg?-v:v;
+}
 function parsearLinhasExtrato(rows){
   var existingKeys={};
   db.lancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
@@ -1126,8 +1146,7 @@ function parsearLinhasExtrato(rows){
     var dp=dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     if(!dp)return;
     var data=dp[3]+'-'+dp[2]+'-'+dp[1];
-    var valStr=valRaw.replace(/\./g,'').replace(',','.').replace(/[^0-9.\-]/g,'');
-    var val=parseFloat(valStr);
+    var val=parseValorExtrato(valRaw);
     if(isNaN(val)||val===0)return;
     var tipo=val>0?'r':'e';
     var valAbs=Math.abs(Math.round(val*100)/100);

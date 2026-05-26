@@ -335,7 +335,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v33';
+var APP_VERSION = 'v34';
 
 var currentUser = null;
 var accessToken = null;
@@ -1111,6 +1111,17 @@ function parsearLinhasExtrato(rows){
 function extratoSetDesc(i,v){extratoImportBuffer[i].desc=v;}
 function extratoSetCat(i,v){extratoImportBuffer[i].cat=v;}
 function extratoSetInclude(i,c){extratoImportBuffer[i].include=c;atualizarBtnExtrato();}
+function extratoSetTipo(i,t){
+  extratoImportBuffer[i].tipo=t;
+  var cats=t==='r'?db.catsR:db.catsE;
+  extratoImportBuffer[i].cat=cats[cats.length-1]||'Outros';
+  var sel=document.getElementById('ext-cat-'+i);
+  sel.innerHTML=cats.map(function(c){return '<option value="'+escHtml(c)+'">'+escHtml(c)+'</option>';}).join('');
+  sel.value=extratoImportBuffer[i].cat;
+  var cor=t==='r'?'#06d6a0':'#ef476f';
+  var vEl=document.getElementById('ext-val-'+i);
+  vEl.style.color=cor;vEl.textContent=(t==='r'?'+':'-')+fmt(extratoImportBuffer[i].val);
+}
 function atualizarBtnExtrato(){
   var n=extratoImportBuffer.filter(function(r){return r.include;}).length;
   var btn=document.getElementById('ext-confirm-btn');
@@ -1139,10 +1150,14 @@ function mostrarPreviewExtrato(dupCount){
         +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
         +faturaNote
-        +'<span style="font-size:10px;color:'+cor+';margin-left:auto;font-weight:700">'+sinal+fmt(r.val)+'</span>'
+        +'<select onchange="extratoSetTipo('+i+',this.value)" style="margin-left:auto;font-size:10px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px;color:'+cor+';font-weight:700">'
+        +'<option value="e"'+(r.tipo==='e'?' selected':'')+'>↓ Débito</option>'
+        +'<option value="r"'+(r.tipo==='r'?' selected':'')+'>↑ Crédito</option>'
+        +'</select>'
+        +'<span id="ext-val-'+i+'" style="font-size:10px;color:'+cor+';font-weight:700;min-width:60px;text-align:right">'+sinal+fmt(r.val)+'</span>'
         +'</div>'
         +'<input type="text" value="'+escHtml(r.desc)+'" oninput="extratoSetDesc('+i+',this.value)" style="width:100%;font-size:12px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:5px 8px;color:#e8eaf6;box-sizing:border-box;margin-bottom:4px">'
-        +'<select onchange="extratoSetCat('+i+',this.value)" style="width:100%;font-size:11px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:4px 6px;color:#e8eaf6">'+opts+'</select>'
+        +'<select id="ext-cat-'+i+'" onchange="extratoSetCat('+i+',this.value)" style="width:100%;font-size:11px;background:#22263a;border:1px solid #3a3f5c;border-radius:6px;padding:4px 6px;color:#e8eaf6">'+opts+'</select>'
         +'</div>'
         +'</div>';
     }).join('');

@@ -320,7 +320,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v31';
+var APP_VERSION = 'v32';
 
 var currentUser = null;
 var accessToken = null;
@@ -1217,8 +1217,11 @@ function renderProj(){
   document.getElementById('proj-comp').innerHTML=h4;
 
   // ── 4. Top 10 despesas ──
-  var allE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e';})
+  var ccItems=[];
+  db.cartoes.forEach(function(cc){gastosCC(cc.id,curM,curY).forEach(function(l){ccItems.push({desc:l.desc,val:l.val,cat:l.cat});});});
+  var allE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub!=='fat';})
     .concat(fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).map(function(f){return{desc:f.desc,val:f.val,cat:f.cat};}))
+    .concat(ccItems)
     .sort(function(a,b){return b.val-a.val;}).slice(0,10);
   var maxE=allE.length?allE[0].val:1;
   var h5=allE.length?allE.map(function(e){

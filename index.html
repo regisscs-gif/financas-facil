@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v43';
+var APP_VERSION = 'v44';
 
 var currentUser = null;
 var accessToken = null;
@@ -1436,7 +1436,7 @@ function renderProj(){
 
   // ── 4. Top 10 despesas ──
   var ccItems=[];
-  db.cartoes.forEach(function(cc){gastosCC(cc.id,curM,curY).forEach(function(l){ccItems.push({desc:l.desc,val:l.val,cat:l.cat});});});
+  db.cartoes.forEach(function(cc){gastosCC(cc.id,curM,curY).filter(function(l){return l.titular==='eu';}).forEach(function(l){ccItems.push({desc:l.desc,val:l.val,cat:l.cat});});});
   var allE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub!=='fat';})
     .concat(fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).map(function(f){return{desc:f.desc,val:f.val,cat:f.cat};}))
     .concat(ccItems)
@@ -1464,7 +1464,7 @@ function renderProj(){
   var allCats={};
   Object.keys(ccCatMap).forEach(function(k){allCats[k]=(allCats[k]||0)+ccCatMap[k];});
   Object.keys(debCatMap).forEach(function(k){allCats[k]=(allCats[k]||0)+debCatMap[k];});
-  var sortedCats=Object.keys(allCats).map(function(k){return{cat:k,total:allCats[k],cc:ccCatMap[k]||0,deb:debCatMap[k]||0};}).sort(function(a,b){return b.total-a.total;});
+  var sortedCats=Object.keys(allCats).map(function(k){return{cat:k,total:allCats[k],cc:ccCatMap[k]||0,deb:debCatMap[k]||0};}).sort(function(a,b){return a.cat.localeCompare(b.cat,'pt-BR');});
   var maxCat=sortedCats.length?sortedCats[0].total:1;
   var h6=sortedCats.length?sortedCats.map(function(e){
     var pDeb=Math.round((e.deb/maxCat)*100),pCC=Math.round((e.cc/maxCat)*100);

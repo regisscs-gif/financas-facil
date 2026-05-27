@@ -350,7 +350,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v44';
+var APP_VERSION = 'v45';
 
 var currentUser = null;
 var accessToken = null;
@@ -1053,13 +1053,14 @@ var extratoImportBuffer=[];
 function autoCatExtrato(desc,tipo){
   var d=desc.toUpperCase();
   if(tipo==='r'){
-    if(/COR RENDIMENTO|JUROS POUP|REMUNER BASICA POUP/.test(d))return 'Investimentos';
+    if(/COR RENDIMENTO|JUROS POUP|REMUNER BASICA POUP|REMUNERACAO APLICACAO/.test(d))return 'Investimentos';
     return(db.catsR&&db.catsR.length)?db.catsR[0]:'Outros';
   }
-  if(/FINANC IMOBILIARIO/.test(d))return 'Moradia';
-  if(/SUPERMERCADO|MERCADO|SUPER |ATACADO/.test(d))return 'Alimentação';
-  if(/UBER|99POP|TAXI|POSTO|COMBUST/.test(d))return 'Transporte';
-  if(/HOSPITAL|CLINIC|MEDIC|DENT|SAUDE|LABORATORIO|EXAME|FARMAC|DROGA/.test(d))return 'Saúde';
+  if(/FINANC IMOBILIARIO|ALUGUEL|CONDOMINIO|IPTU/.test(d))return 'Moradia';
+  if(/SUPERMERCADO|MERCADO|SUPER |ATACADO|PANIFICADORA|PADARIA|RESTAUR|LANCHON|PIZZ|BURGUER|HAMBURGUER/.test(d))return 'Alimentação';
+  if(/UBER|99POP|TAXI|POSTO|COMBUST|ESTACION/.test(d))return 'Transporte';
+  if(/HOSPITAL|CLINIC|MEDIC|DENT|SAUDE|LABORATORIO|EXAME|FARMAC|DROGA|HARMONIZ/.test(d))return 'Saúde';
+  if(/IOF|MINISTERIO DA FAZENDA|DARF|RECEITA FEDERAL/.test(d))return(db.catsE&&db.catsE.indexOf('Impostos')>=0)?'Impostos':'Outros';
   return(db.catsE&&db.catsE.length)?db.catsE[db.catsE.length-1]:'Outros';
 }
 function abrirImportSelector(){
@@ -1130,11 +1131,18 @@ function parseValorExtrato(str){
   var v=parseFloat(str);
   return neg?-v:v;
 }
-function parsearLinhasExtrato(rows){
-  var existingKeys={};
-  db.lancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
-  extratoImportBuffer=[];
-  var dupCount=0;
+function detectarBancoExtrato(rows){
+  for(var i=0;i<Math.min(10,rows.length);i++){
+    var r=rows[i];if(!r)continue;
+    var c4=String(r[4]||'').replace(/\s/g,'').toLowerCase();
+    if(c4.indexOf('cr')===0&&c4.indexOf('dito')!==-1)return'santander';
+    var c3=String(r[3]||'').toLowerCase();
+    if(c3.indexOf('valor')!==-1)return'itau';
+  }
+  return'itau';
+}
+function parsearLinhasItau(rows,existingKeys){
+  var items=[],dupCount=0;
   rows.forEach(function(cols){
     if(!cols||cols.length<4)return;
     var dataRaw=String(cols[0]||'').trim();
@@ -1143,21 +1151,52 @@ function parsearLinhasExtrato(rows){
     if(!dataRaw||!desc||!valRaw)return;
     if(!/\d/.test(dataRaw))return;
     if(/SALDO/i.test(desc)||/lançamento/i.test(desc))return;
-    var dp=dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-    if(!dp)return;
+    var dp=dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(!dp)return;
     var data=dp[3]+'-'+dp[2]+'-'+dp[1];
-    var val=parseValorExtrato(valRaw);
-    if(isNaN(val)||val===0)return;
+    var val=parseValorExtrato(valRaw);if(isNaN(val)||val===0)return;
     var tipo=val>0?'r':'e';
     var valAbs=Math.abs(Math.round(val*100)/100);
     var csvKey=data+'|'+desc+'|'+valAbs;
     if(existingKeys[csvKey]){dupCount++;return;}
     var isFatura=/FATURA PAGA/i.test(desc);
-    var cat=autoCatExtrato(desc,tipo);
-    extratoImportBuffer.push({data:data,desc:desc,cat:cat,val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
+    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
   });
+  return{items:items,dupCount:dupCount};
+}
+function parsearLinhasSantander(rows,existingKeys){
+  var items=[],dupCount=0;
+  for(var i=6;i<rows.length;i++){
+    var cols=rows[i];if(!cols||cols.length<6)continue;
+    var dataRaw=String(cols[0]||'').trim();
+    var desc=String(cols[1]||'').replace(/\s+/g,' ').trim();
+    var creditoRaw=String(cols[4]||'').trim();
+    var debitoRaw=String(cols[5]||'').trim();
+    if(!dataRaw||!desc)continue;
+    var dp=dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(!dp)continue;
+    var data=dp[3]+'-'+dp[2]+'-'+dp[1];
+    var val,tipo;
+    if(creditoRaw&&creditoRaw.replace(/[\s,0]/g,'')){
+      val=parseValorExtrato(creditoRaw);tipo='r';
+    }else if(debitoRaw&&debitoRaw.replace(/[\s,0]/g,'')){
+      val=Math.abs(parseValorExtrato(debitoRaw));tipo='e';
+    }else continue;
+    if(isNaN(val)||val===0)continue;
+    var valAbs=Math.round(val*100)/100;
+    var csvKey=data+'|'+desc+'|'+valAbs;
+    if(existingKeys[csvKey]){dupCount++;continue;}
+    var isFatura=/FATURA PAGA/i.test(desc);
+    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
+  }
+  return{items:items,dupCount:dupCount};
+}
+function parsearLinhasExtrato(rows){
+  var existingKeys={};
+  db.lancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+  var banco=detectarBancoExtrato(rows);
+  var res=banco==='santander'?parsearLinhasSantander(rows,existingKeys):parsearLinhasItau(rows,existingKeys);
+  extratoImportBuffer=res.items;
   extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});
-  mostrarPreviewExtrato(dupCount);
+  mostrarPreviewExtrato(res.dupCount);
 }
 function extratoSetDesc(i,v){extratoImportBuffer[i].desc=v;}
 function extratoSetCat(i,v){extratoImportBuffer[i].cat=v;}

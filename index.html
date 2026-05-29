@@ -351,7 +351,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v47';
+var APP_VERSION = 'v48';
 
 var currentUser = null;
 var accessToken = null;
@@ -1269,7 +1269,7 @@ function mostrarPreviewExtrato(dupCount){
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="extratoSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
         +faturaNote
-        +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</span>'
+        +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var exp=s.whiteSpace===\'normal\';s.whiteSpace=exp?\'nowrap\':\'normal\';s.overflow=exp?\'hidden\':\'visible\'">'+escHtml(r.desc)+'</span>'
         +'<select onchange="extratoSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'
         +catOpts
         +'</select>'

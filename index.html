@@ -329,7 +329,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   <div class="mod">
     <h3>Importar extrato</h3>
     <div id="ext-summary" style="font-size:12px;color:#7b80a0;margin-bottom:12px;padding:10px;background:#22263a;border-radius:8px;line-height:1.8"></div>
-    <div id="ext-preview" style="max-height:340px;overflow-y:auto;margin-bottom:12px"></div>
+    <div id="ext-fixos" style="margin-bottom:12px"></div>
+    <div id="ext-preview" style="max-height:300px;overflow-y:auto;margin-bottom:12px"></div>
     <button class="sbtn" id="ext-confirm-btn" onclick="confirmarImportExtrato()">Importar</button>
     <button class="cbtn" onclick="fechar('ov-import-extrato')">Cancelar</button>
   </div>
@@ -350,7 +351,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v45';
+var APP_VERSION = 'v46';
 
 var currentUser = null;
 var accessToken = null;
@@ -1050,6 +1051,7 @@ function confirmarImportCSV(){
 
 // ── IMPORT EXTRATO ───────────────────────────────────────
 var extratoImportBuffer=[];
+var fixosParaSuprimir=[];
 function autoCatExtrato(desc,tipo){
   var d=desc.toUpperCase();
   if(tipo==='r'){
@@ -1218,10 +1220,41 @@ function atualizarBtnExtrato(){
   btn.disabled=n===0;
 }
 function mostrarPreviewExtrato(dupCount){
+  // Detecta fixos ativos nos meses cobertos pelo extrato
+  fixosParaSuprimir=[];
+  var mksNoImport={};
+  extratoImportBuffer.forEach(function(r){mksNoImport[r.data.substring(0,7)]=true;});
+  Object.keys(mksNoImport).sort().forEach(function(mk){
+    var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
+    fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
+      fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:false});
+    });
+  });
+
   var n=extratoImportBuffer.length;
   document.getElementById('ext-summary').innerHTML=
-    '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b><br>'
-    +'<span>'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>';
+    '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b>'
+    +'<span style="margin-left:10px">'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>';
+
+  // Seção de fixos para suprimir
+  var hf='';
+  if(fixosParaSuprimir.length){
+    hf='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:4px">'
+      +'<div style="font-size:11px;font-weight:600;color:#ffd166;margin-bottom:8px">⚠️ Fixos do período — marque os que já estão no extrato para não duplicar</div>'
+      +fixosParaSuprimir.map(function(f,i){
+        var p=f.mk.split('-');var mesLabel=MESES[parseInt(p[1])-1]+'/'+p[0];
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a">'
+          +'<input type="checkbox" onchange="extratoSetFixoSuprimir('+i+',this.checked)" style="flex-shrink:0;width:16px;height:16px">'
+          +'<span style="flex:1;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
+          +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+mesLabel+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:#ef476f;flex-shrink:0">-'+fmt(f.val)+'</span>'
+          +'</div>';
+      }).join('')
+      +'</div>';
+  }
+  document.getElementById('ext-fixos').innerHTML=hf;
+
+  // Lista de lançamentos com dropdown de categoria
   if(n===0){
     document.getElementById('ext-preview').innerHTML='<div class="empty">Nenhum lançamento novo encontrado.</div>';
   }else{
@@ -1230,16 +1263,17 @@ function mostrarPreviewExtrato(dupCount){
       var cor=r.tipo==='r'?'#06d6a0':'#ef476f';
       var sinal=r.tipo==='r'?'+':'-';
       var faturaNote=r.isFatura?'<span style="font-size:9px;color:#a5b4fc;margin-left:4px">já no cartão</span>':'';
+      var cats=r.tipo==='r'?db.catsR:db.catsE;
+      var catOpts=cats.map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
       return '<div style="display:flex;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #2a2f4a">'
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="extratoSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<div style="flex:1;min-width:0">'
         +'<div style="font-size:12px;color:#e8eaf6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(r.desc)+'</div>'
         +'<div style="display:flex;align-items:center;gap:6px;margin-top:3px">'
-        +'<span style="font-size:10px;color:#7b80a0">'+p[2]+'/'+p[1]+'</span>'
+        +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
         +faturaNote
-        +'<select id="ext-tipo-'+i+'" onchange="extratoSetTipo('+i+',this.value)" style="font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:'+cor+';padding:1px 4px">'
-        +'<option value="e"'+(r.tipo==='e'?' selected':'')+'>↓ Débito</option>'
-        +'<option value="r"'+(r.tipo==='r'?' selected':'')+'>↑ Crédito</option>'
+        +'<select onchange="extratoSetCat('+i+',this.value)" style="font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px;max-width:130px;flex:1;min-width:0">'
+        +catOpts
         +'</select>'
         +'</div>'
         +'</div>'
@@ -1250,6 +1284,7 @@ function mostrarPreviewExtrato(dupCount){
   atualizarBtnExtrato();
   document.getElementById('ov-import-extrato').classList.add('on');
 }
+function extratoSetFixoSuprimir(i,c){fixosParaSuprimir[i].checked=c;}
 function confirmarImportExtrato(){
   var itens=extratoImportBuffer.filter(function(r){return r.include;});
   if(!itens.length)return;
@@ -1257,10 +1292,18 @@ function confirmarImportExtrato(){
     db.lancs.push({id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey});
   });
   db.lancs.sort(function(a,b){return b.data.localeCompare(a.data);});
-  log('extrato_import',{count:itens.length});
+  var suprimidos=fixosParaSuprimir.filter(function(f){return f.checked;});
+  suprimidos.forEach(function(f){
+    var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
+    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true};
+    if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
+  });
+  log('extrato_import',{count:itens.length,fixosSup:suprimidos.length});
   fechar('ov-import-extrato');salvar();
-  toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
-  extratoImportBuffer=[];render();
+  var msg='✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!';
+  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo'+(suprimidos.length!==1?'s':'')+' suprimido'+(suprimidos.length!==1?'s':'')+' neste mês.';
+  toast(msg);
+  extratoImportBuffer=[];fixosParaSuprimir=[];render();
 }
 
 // ── RENDER ───────────────────────────────────────────────

@@ -142,9 +142,6 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 
   <div class="page" id="pg-lanc">
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-      <button onclick="abrirImportSelector()" style="background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📂 Importar</button>
-    </div>
     <div id="l-list"></div>
   </div>
   <div class="page" id="pg-fix">
@@ -202,6 +199,16 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     </div>
   </div>
 
+  <div id="fab-menu" style="display:none;position:fixed;bottom:128px;right:calc(50% - 215px + 14px);z-index:39;flex-direction:column;gap:10px;align-items:flex-end">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="background:#1a1d27;border:1px solid #2a2f4a;color:#e8eaf6;padding:5px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.6)">📂 Importar extrato</span>
+      <button onclick="fecharFabMenu();abrirImportSelector()" style="width:42px;height:42px;border-radius:50%;background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center">📂</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="background:#1a1d27;border:1px solid #2a2f4a;color:#e8eaf6;padding:5px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.6)">Novo lançamento</span>
+      <button onclick="fecharFabMenu();abrirNovoLanc()" style="width:42px;height:42px;border-radius:50%;background:#22263a;border:1px solid #3a3f5c;color:#06d6a0;font-size:22px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center">+</button>
+    </div>
+  </div>
   <button class="fab" id="fab">+</button>
   <nav class="nav">
     <button class="nb on" data-pg="dash"><span>⊞</span>Dashboard</button>
@@ -351,7 +358,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v48';
+var APP_VERSION = 'v49';
 
 var currentUser = null;
 var accessToken = null;
@@ -739,6 +746,7 @@ document.querySelectorAll('.nb').forEach(function(b){
     document.getElementById('pg-'+curPg).classList.add('on');
     document.querySelectorAll('.nb').forEach(function(x){x.classList.remove('on');});
     b.classList.add('on');
+    fecharFabMenu();
     document.getElementById('fab').style.display=(curPg==='dash'||curPg==='lanc'||curPg==='fix'||curPg==='cc')?'flex':'none';
     if(curPg==='cc')voltarCartoes();
     if(curPg==='cfg'){renderCfg();renderLog();}
@@ -748,10 +756,31 @@ document.querySelectorAll('.nb').forEach(function(b){
 document.getElementById('mprev').onclick=function(){ prevCiclo(); };
 document.getElementById('mnext').onclick=function(){ nextCiclo(); };
 document.getElementById('fab').onclick=function(){
-  if(curPg==='fix')abrirNovoFixo();
+  if(curPg==='lanc'){
+    var menu=document.getElementById('fab-menu');
+    if(menu.style.display==='none'){menu.style.display='flex';this.textContent='×';}
+    else fecharFabMenu();
+  } else if(curPg==='fix')abrirNovoFixo();
   else if(curPg==='cc'){if(curCCId)abrirNovoGastoCC(curCCId);else if(db.cartoes.length<2)abrirCadCartao();else toast('Máximo 2 cartões');}
   else abrirNovoLanc();
 };
+function fecharFabMenu(){var m=document.getElementById('fab-menu');if(m){m.style.display='none';}document.getElementById('fab').textContent='+';}
+// Fechar menu ao clicar fora
+document.addEventListener('click',function(e){
+  var menu=document.getElementById('fab-menu');
+  if(menu&&menu.style.display!=='none'&&!menu.contains(e.target)&&e.target.id!=='fab')fecharFabMenu();
+});
+// Swipe horizontal para trocar mês
+(function(){
+  var sx=0,sy=0;
+  document.addEventListener('touchstart',function(e){sx=e.touches[0].clientX;sy=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',function(e){
+    if(document.querySelector('.ov.on'))return;
+    var dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+    if(Math.abs(dx)<60||Math.abs(dx)<=Math.abs(dy))return;
+    if(dx<0)nextCiclo();else prevCiclo();
+  },{passive:true});
+})();
 
 function fechar(id){document.getElementById(id).classList.remove('on');}
 document.querySelectorAll('.ov').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('on');});});

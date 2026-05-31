@@ -330,7 +330,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:12px;color:#7b80a0;margin-bottom:6px">Fatura em CSV</div>
       <div id="imp-cc-sel"></div>
       <div style="border-top:1px solid #2a2f4a;margin-top:10px;padding-top:10px">
-        <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Fatura em PDF — Santander</div>
+        <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Fatura em PDF — Santander e Itaú</div>
         <label for="cc-pdf-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportPDFFatura()">📄 Selecionar PDF da fatura</label>
       </div>
     </div>
@@ -359,8 +359,13 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 <div class="ov" id="ov-pdf-pass">
   <div class="mod">
     <h3>Abrir fatura PDF</h3>
-    <div style="font-size:12px;color:#7b80a0;margin-bottom:14px">Informe a senha do arquivo (geralmente o CPF sem pontos) e selecione o cartão correspondente.</div>
-    <label>Senha do arquivo</label>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:14px">Informe a senha e selecione o banco e o cartão correspondente.</div>
+    <label>Banco</label>
+    <select id="pdf-banco-sel" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%;margin-bottom:4px">
+      <option value="santander">Santander</option>
+      <option value="itau">Itaú</option>
+    </select>
+    <label style="margin-top:10px">Senha do arquivo</label>
     <input id="pdf-pass-inp" type="password" placeholder="Ex: CPF sem pontos" autocomplete="off">
     <label style="margin-top:10px">Cartão</label>
     <select id="pdf-card-sel" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%;margin-bottom:4px"></select>
@@ -375,7 +380,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v56';
+var APP_VERSION = 'v57';
 
 var currentUser = null;
 var accessToken = null;
@@ -1403,6 +1408,7 @@ document.getElementById('cc-pdf-input').addEventListener('change',function(e){
 function confirmarSenhaPDF(){
   var password=document.getElementById('pdf-pass-inp').value.trim();
   var ccId=parseInt(document.getElementById('pdf-card-sel').value);
+  var banco=document.getElementById('pdf-banco-sel').value;
   if(!password){toast('Informe a senha');return;}
   if(!ccId){toast('Cadastre um cartão primeiro');return;}
   fatCCId=ccId;
@@ -1412,15 +1418,14 @@ function confirmarSenhaPDF(){
     lerPDFFatura(pdfFaturaFile,password).then(function(lines){
       console.log('[PDF] Total de linhas extraídas:', lines.length);
       lines.forEach(function(l,i){console.log('['+i+']',l);});
-      // Divide em blocos de 40 para não truncar no log
       for(var _b=0;_b<lines.length;_b+=40){log('pdf_linhas_'+Math.floor(_b/40),{de:_b,linhas:lines.slice(_b,_b+40)});}
       var existingKeys={};
       db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
-      var res=parsearFaturaSantander(lines,existingKeys);
+      var res=banco==='itau'?parsearFaturaItau(lines,existingKeys):parsearFaturaSantander(lines,existingKeys);
       if(!res.items.length&&!res.dupCount){
         var secEncontrada=lines.some(function(l){return /Detalhamento|Lan[çc]amentos|Transa[çc][õo]es/i.test(l);});
         toast('Nenhum registro encontrado. '+(secEncontrada?'Seção encontrada mas sem transações.':'Seção de lançamentos não localizada no PDF.'));
-        log('pdf_parse_vazio',{secEncontrada:secEncontrada,linhas:lines.length});
+        log('pdf_parse_vazio',{banco:banco,secEncontrada:secEncontrada,linhas:lines.length});
         return;
       }
       importModo='fatura';
@@ -1534,6 +1539,76 @@ function parsearFaturaSantander(lines,existingKeys){
       }
     }
     items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+  }
+  return{items:items,dupCount:dupCount};
+}
+function parsearFaturaItau(lines,existingKeys){
+  var items=[],dupCount=0;
+  // Inferir mês/ano pelo primeiro DD/MM/YYYY (vencimento)
+  var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
+  for(var i=0;i<lines.length&&i<40;i++){
+    var mD=lines[i].match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if(mD){billingM=parseInt(mD[2]);billingY=parseInt(mD[3]);break;}
+  }
+  function billingDate(k){
+    var m=billingM-1+k,y=billingY;
+    if(m<1){m+=12;y--;}while(m>12){m-=12;y++;}
+    return y+'-'+pad(m)+'-10';
+  }
+  function inferYear(mm){return mm<=billingM?billingY:billingY-1;}
+  var SKIP=/PAGAMENTO|ANUIDADE/i;
+  var inTx=false,stop=false;
+  // Regex para capturar transações: DD/MM DESCRIÇÃO VALOR
+  // Não-greedy para pegar o menor valor possível e não vazar para a coluna direita
+  var TX_RE=/(\d{2})\/(\d{2})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})/g;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i].trim();
+    if(/Lan[çc]amentos.*compras.*saques/i.test(line)){inTx=true;continue;}
+    if(/Comprasparceladas|Compras parceladas/i.test(line)){stop=true;}
+    if(stop||!inTx)continue;
+    TX_RE.lastIndex=0;
+    var m;
+    while((m=TX_RE.exec(line))!==null){
+      var dd=m[1],mm2=parseInt(m[2]),rawDesc=m[3],valStr=m[4];
+      if(mm2<1||mm2>12)continue;
+      var ddN=parseInt(dd);if(ddN<1||ddN>31)continue;
+      var val=parseValorExtrato(valStr);
+      if(isNaN(val)||val<=0)continue;
+      var valAbs=Math.round(val*100)/100;
+      // Detecta parcelamento: último DD/TT na descrição (pode estar embutido ou separado)
+      var isParcela=false,pn=0,pt=0,desc=rawDesc;
+      var parcRE=/(\d{2})\/(\d{2})/g,pm,lastParc=null;
+      while((pm=parcRE.exec(rawDesc))!==null)lastParc=pm;
+      if(lastParc){
+        var pnv=parseInt(lastParc[1]),ptv=parseInt(lastParc[2]);
+        if(ptv>1&&pnv>=1&&pnv<=ptv){
+          isParcela=true;pn=pnv;pt=ptv;
+          desc=rawDesc.substring(0,lastParc.index).trim()||rawDesc;
+        }
+      }
+      if(!desc||SKIP.test(desc))continue;
+      var data,origData,csvKey;
+      if(isParcela){
+        data=billingDate(0);
+        origData=inferYear(mm2)+'-'+pad(mm2)+'-'+pad(ddN);
+        csvKey=data+'|'+desc+'|'+valAbs;
+      }else{
+        var y=inferYear(mm2);
+        data=y+'-'+pad(mm2)+'-'+pad(ddN);
+        origData=data;
+        csvKey=data+'|'+desc+'|'+valAbs;
+      }
+      if(existingKeys[csvKey]){dupCount++;continue;}
+      var futureDates=[];
+      if(isParcela){
+        for(var fk=1;fk<=pt-pn;fk++){
+          var fd=billingDate(fk);
+          var fcsv=fd+'|'+desc+'|'+valAbs;
+          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[fcsv]});
+        }
+      }
+      items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+    }
   }
   return{items:items,dupCount:dupCount};
 }

@@ -375,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v53';
+var APP_VERSION = 'v54';
 
 var currentUser = null;
 var accessToken = null;
@@ -1395,7 +1395,8 @@ function confirmarSenhaPDF(){
     lerPDFFatura(pdfFaturaFile,password).then(function(lines){
       console.log('[PDF] Total de linhas extraídas:', lines.length);
       lines.forEach(function(l,i){console.log('['+i+']',l);});
-      log('pdf_linhas',{total:lines.length,primeiras:lines.slice(0,30)});
+      // Divide em blocos de 40 para não truncar no log
+      for(var _b=0;_b<lines.length;_b+=40){log('pdf_linhas_'+Math.floor(_b/40),{de:_b,linhas:lines.slice(_b,_b+40)});}
       var existingKeys={};
       db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
       var res=parsearFaturaSantander(lines,existingKeys);

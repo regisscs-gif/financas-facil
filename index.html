@@ -221,6 +221,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 
 <input type="file" id="csv-file-input" accept=".csv" style="display:none">
 <input type="file" id="extrato-file-input" accept=".xls,.xlsx,.csv" style="display:none">
+<input type="file" id="cc-pdf-input" accept=".pdf" style="display:none">
 
 <!-- MODAIS -->
 <div class="ov" id="ov-lanc">
@@ -326,8 +327,12 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     </div>
     <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
       <div style="font-size:13px;font-weight:700;margin-bottom:4px">💳 Cartão de crédito</div>
-      <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Fatura em CSV</div>
+      <div style="font-size:12px;color:#7b80a0;margin-bottom:6px">Fatura em CSV</div>
       <div id="imp-cc-sel"></div>
+      <div style="border-top:1px solid #2a2f4a;margin-top:10px;padding-top:10px">
+        <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Fatura em PDF — Santander</div>
+        <label for="cc-pdf-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportPDFFatura()">📄 Selecionar PDF da fatura</label>
+      </div>
     </div>
     <button class="cbtn" onclick="fechar('ov-import-select')">Cancelar</button>
   </div>
@@ -351,6 +356,18 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="cbtn" onclick="fechar('ov-import-csv')">Cancelar</button>
   </div>
 </div>
+<div class="ov" id="ov-pdf-pass">
+  <div class="mod">
+    <h3>Abrir fatura PDF</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:14px">Informe a senha do arquivo (geralmente o CPF sem pontos) e selecione o cartão correspondente.</div>
+    <label>Senha do arquivo</label>
+    <input id="pdf-pass-inp" type="password" placeholder="Ex: CPF sem pontos" autocomplete="off">
+    <label style="margin-top:10px">Cartão</label>
+    <select id="pdf-card-sel" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%;margin-bottom:4px"></select>
+    <button class="sbtn" style="margin-top:14px" onclick="confirmarSenhaPDF()">Abrir PDF</button>
+    <button class="cbtn" onclick="fechar('ov-pdf-pass')">Cancelar</button>
+  </div>
+</div>
 
 <script>
 // ── SUPABASE CONFIG ──────────────────────────────────────
@@ -358,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v50';
+var APP_VERSION = 'v51';
 
 var currentUser = null;
 var accessToken = null;
@@ -1086,6 +1103,9 @@ function confirmarImportCSV(){
 // ── IMPORT EXTRATO ───────────────────────────────────────
 var extratoImportBuffer=[];
 var fixosParaSuprimir=[];
+var importModo='extrato'; // 'extrato' | 'fatura'
+var fatCCId=null;
+var pdfFaturaFile=null;
 function autoCatExtrato(desc,tipo){
   var d=desc.toUpperCase();
   if(tipo==='r'){
@@ -1254,23 +1274,27 @@ function atualizarBtnExtrato(){
   btn.disabled=n===0;
 }
 function mostrarPreviewExtrato(dupCount){
-  // Detecta fixos ativos nos meses cobertos pelo extrato
+  document.querySelector('#ov-import-extrato h3').textContent=importModo==='fatura'?'Importar fatura PDF':'Importar extrato';
+
+  // Fixos: só relevante no modo extrato (conta corrente)
   fixosParaSuprimir=[];
-  var mksNoImport={};
-  extratoImportBuffer.forEach(function(r){mksNoImport[r.data.substring(0,7)]=true;});
-  Object.keys(mksNoImport).sort().forEach(function(mk){
-    var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
-    fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
-      fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:false});
+  if(importModo!=='fatura'){
+    var mksNoImport={};
+    extratoImportBuffer.forEach(function(r){mksNoImport[r.data.substring(0,7)]=true;});
+    Object.keys(mksNoImport).sort().forEach(function(mk){
+      var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
+      fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
+        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:false});
+      });
     });
-  });
+  }
 
   var n=extratoImportBuffer.length;
   document.getElementById('ext-summary').innerHTML=
     '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b>'
     +'<span style="margin-left:10px">'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>';
 
-  // Seção de fixos para suprimir
+  // Seção de fixos para suprimir (só no modo extrato)
   var hf='';
   if(fixosParaSuprimir.length){
     hf='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:4px">'
@@ -1318,6 +1342,17 @@ function extratoSetFixoSuprimir(i,c){fixosParaSuprimir[i].checked=c;}
 function confirmarImportExtrato(){
   var itens=extratoImportBuffer.filter(function(r){return r.include;});
   if(!itens.length)return;
+  if(importModo==='fatura'){
+    itens.forEach(function(r){
+      db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'av',csvKey:r.csvKey});
+    });
+    log('fatura_pdf_import',{count:itens.length,ccId:fatCCId});
+    importModo='extrato';
+    fechar('ov-import-extrato');salvar();syncFaturas();
+    toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
+    extratoImportBuffer=[];fixosParaSuprimir=[];render();
+    return;
+  }
   itens.forEach(function(r){
     db.lancs.push({id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey});
   });
@@ -1334,6 +1369,120 @@ function confirmarImportExtrato(){
   if(suprimidos.length)msg+=' '+suprimidos.length+' fixo'+(suprimidos.length!==1?'s':'')+' suprimido'+(suprimidos.length!==1?'s':'')+' neste mês.';
   toast(msg);
   extratoImportBuffer=[];fixosParaSuprimir=[];render();
+}
+// ── IMPORT FATURA PDF (Santander) ────────────────────────
+function prepImportPDFFatura(){document.getElementById('cc-pdf-input').value='';}
+document.getElementById('cc-pdf-input').addEventListener('change',function(e){
+  var file=e.target.files[0];if(!file)return;
+  fechar('ov-import-select');
+  pdfFaturaFile=file;
+  var sel=document.getElementById('pdf-card-sel');
+  sel.innerHTML=db.cartoes.length
+    ?db.cartoes.map(function(cc){return'<option value="'+cc.id+'">'+escHtml(cc.nome)+'</option>';}).join('')
+    :'<option value="">Nenhum cartão cadastrado</option>';
+  document.getElementById('pdf-pass-inp').value='';
+  document.getElementById('ov-pdf-pass').classList.add('on');
+});
+function confirmarSenhaPDF(){
+  var password=document.getElementById('pdf-pass-inp').value.trim();
+  var ccId=parseInt(document.getElementById('pdf-card-sel').value);
+  if(!password){toast('Informe a senha');return;}
+  if(!ccId){toast('Cadastre um cartão primeiro');return;}
+  fatCCId=ccId;
+  fechar('ov-pdf-pass');
+  toast('Abrindo PDF...');
+  carregarPDFJS(function(){
+    lerPDFFatura(pdfFaturaFile,password).then(function(lines){
+      var existingKeys={};
+      db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+      var res=parsearFaturaSantander(lines,existingKeys);
+      importModo='fatura';
+      extratoImportBuffer=res.items;
+      extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});
+      mostrarPreviewExtrato(res.dupCount);
+    }).catch(function(e){
+      var msg=(e&&(e.name==='PasswordException'||e.code===2||e.code===1))?'Senha incorreta.':'Erro ao ler o PDF.';
+      toast(msg);
+    });
+  });
+}
+function carregarPDFJS(cb){
+  if(typeof pdfjsLib!=='undefined'){cb();return;}
+  var s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+  s.onload=function(){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';cb();};
+  s.onerror=function(){toast('Sem conexão para carregar leitor de PDF.');};
+  document.head.appendChild(s);
+}
+function lerPDFFatura(file,password){
+  return file.arrayBuffer().then(function(ab){
+    var task=pdfjsLib.getDocument({data:ab,password:password});
+    return task.promise.then(function(pdf){
+      var pagePromises=[];
+      for(var p=1;p<=pdf.numPages;p++)(function(pn){pagePromises.push(pdf.getPage(pn).then(function(page){return page.getTextContent();}));})(p);
+      return Promise.all(pagePromises).then(function(tcs){
+        var allLines=[];
+        tcs.forEach(function(tc){
+          var byY={};
+          tc.items.forEach(function(item){
+            var y=Math.round(item.transform[5]/2)*2;
+            if(!byY[y])byY[y]=[];
+            byY[y].push({x:item.transform[4],s:item.str});
+          });
+          Object.keys(byY).sort(function(a,b){return b-a;}).forEach(function(y){
+            var line=byY[y].sort(function(a,b){return a.x-b.x;}).map(function(i){return i.s;}).join(' ').trim();
+            if(line)allLines.push(line);
+          });
+        });
+        return allLines;
+      });
+    });
+  });
+}
+function parsearFaturaSantander(lines,existingKeys){
+  var items=[],dupCount=0;
+  // Inferir mês/ano pelo vencimento
+  var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
+  for(var i=0;i<lines.length;i++){
+    var m=lines[i].match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if(m&&(/Vencimento/i.test(lines[i])||(i>0&&/Vencimento/i.test(lines[i-1])))){
+      billingM=parseInt(m[2]);billingY=parseInt(m[3]);break;
+    }
+  }
+  function inferYear(mm){return mm<=billingM?billingY:billingY-1;}
+  var inDetail=false,skipSec=false;
+  var SKIP=/PAGAMENTO DE FATURA|ANUIDADE/i;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i].trim();
+    if(/Detalhamento da Fatura/i.test(line)){inDetail=true;continue;}
+    if(!inDetail)continue;
+    if(/Resumo da Fatura/i.test(line))break;
+    if(/Pagamento e Demais Cr/i.test(line)){skipSec=true;continue;}
+    if(/^(Parcelamentos|Despesas)$/i.test(line)){skipSec=false;continue;}
+    if(/Compra\s+Data|VALOR TOTAL/i.test(line))continue;
+    if(skipSec)continue;
+    var mx=line.match(/^(?:\d+\s+)?(\d{2})\/(\d{2})\s+(.+)$/);
+    if(!mx)continue;
+    var dd=mx[1],mm2=parseInt(mx[2]),rest=mx[3];
+    // Encontra todos os valores monetários na linha
+    var amtReg=/-?\d{1,3}(?:\.\d{3})*,\d{2}/g,amts=[],tmp;
+    while((tmp=amtReg.exec(rest))!==null)amts.push(tmp);
+    if(!amts.length)continue;
+    var idx=amts.length-1;
+    if(idx>0&&amts[idx][0]==='0,00')idx--;
+    var amtStr=amts[idx][0];
+    var desc=rest.substring(0,amts[idx].index).trim().replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    if(!desc||SKIP.test(desc))continue;
+    var val=parseValorExtrato(amtStr);
+    if(isNaN(val)||val<=0)continue;
+    var y=inferYear(mm2);
+    var data=y+'-'+pad(mm2)+'-'+pad(parseInt(dd));
+    var valAbs=Math.round(val*100)/100;
+    var csvKey=data+'|'+desc+'|'+valAbs;
+    if(existingKeys[csvKey]){dupCount++;continue;}
+    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false});
+  }
+  return{items:items,dupCount:dupCount};
 }
 
 // ── RENDER ───────────────────────────────────────────────

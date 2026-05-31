@@ -375,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v52';
+var APP_VERSION = 'v53';
 
 var currentUser = null;
 var accessToken = null;
@@ -1393,9 +1393,18 @@ function confirmarSenhaPDF(){
   toast('Abrindo PDF...');
   carregarPDFJS(function(){
     lerPDFFatura(pdfFaturaFile,password).then(function(lines){
+      console.log('[PDF] Total de linhas extraídas:', lines.length);
+      lines.forEach(function(l,i){console.log('['+i+']',l);});
+      log('pdf_linhas',{total:lines.length,primeiras:lines.slice(0,30)});
       var existingKeys={};
       db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
       var res=parsearFaturaSantander(lines,existingKeys);
+      if(!res.items.length&&!res.dupCount){
+        var secEncontrada=lines.some(function(l){return /Detalhamento|Lan[çc]amentos|Transa[çc][õo]es/i.test(l);});
+        toast('Nenhum registro encontrado. '+(secEncontrada?'Seção encontrada mas sem transações.':'Seção de lançamentos não localizada no PDF.'));
+        log('pdf_parse_vazio',{secEncontrada:secEncontrada,linhas:lines.length});
+        return;
+      }
       importModo='fatura';
       extratoImportBuffer=res.items;
       extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});
@@ -1452,16 +1461,21 @@ function parsearFaturaSantander(lines,existingKeys){
   function inferYear(mm){return mm<=billingM?billingY:billingY-1;}
   var inDetail=false,skipSec=false;
   var SKIP=/PAGAMENTO DE FATURA|ANUIDADE/i;
+  var SEC_DETAIL=/Detalhamento da Fatura|Lan[çc]amentos da Fatura|Transa[çc][õo]es/i;
+  var SEC_END=/Resumo da Fatura|Total da Fatura|Totais/i;
+  var SEC_SKIP=/Pagamento e Demais Cr|Cr[ée]ditos/i;
+  var SEC_RESUME=/^(Parcelamentos|Despesas|Compras)$/i;
   for(var i=0;i<lines.length;i++){
     var line=lines[i].trim();
-    if(/Detalhamento da Fatura/i.test(line)){inDetail=true;continue;}
+    if(SEC_DETAIL.test(line)){inDetail=true;console.log('[Parse] seção encontrada na linha',i,line);continue;}
     if(!inDetail)continue;
-    if(/Resumo da Fatura/i.test(line))break;
-    if(/Pagamento e Demais Cr/i.test(line)){skipSec=true;continue;}
-    if(/^(Parcelamentos|Despesas)$/i.test(line)){skipSec=false;continue;}
-    if(/Compra\s+Data|VALOR TOTAL/i.test(line))continue;
+    if(SEC_END.test(line)){console.log('[Parse] fim de seção na linha',i,line);break;}
+    if(SEC_SKIP.test(line)){skipSec=true;continue;}
+    if(SEC_RESUME.test(line)){skipSec=false;continue;}
+    if(/Compra\s+Data|VALOR TOTAL|^Data\s/i.test(line))continue;
     if(skipSec)continue;
-    var mx=line.match(/^(?:\d+\s+)?(\d{2})\/(\d{2})\s+(.+)$/);
+    // Aceita DD/MM ou DD/MM/AAAA no início da linha (com ou sem prefixo numérico)
+    var mx=line.match(/^(?:\d+\s+)?(\d{2})\/(\d{2})(?:\/\d{4})?\s+(.+)$/);
     if(!mx)continue;
     var dd=mx[1],mm2=parseInt(mx[2]),rest=mx[3];
     // Encontra todos os valores monetários na linha

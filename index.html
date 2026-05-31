@@ -276,8 +276,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <h3 id="cc-cad-title">Novo Cartão</h3>
     <label>Nome do cartão</label><input id="cc-nome" placeholder="Ex: Nubank, Inter...">
     <label>Limite (R$)</label><input id="cc-limite" type="number" min="0" step="0.01" placeholder="0.00">
-    <label>Dia de fechamento</label><input id="cc-fecha" type="number" min="1" max="31" placeholder="Ex: 10">
-    <label>Dia de vencimento</label><input id="cc-vence" type="number" min="1" max="31" placeholder="Ex: 17">
+    <label>Dia de fechamento <span style="font-size:10px;color:#7b80a0">(31 = último dia do mês)</span></label><input id="cc-fecha" type="number" min="1" max="31" placeholder="Ex: 10">
+    <label>Dia de vencimento <span style="font-size:10px;color:#7b80a0">(31 = último dia do mês)</span></label><input id="cc-vence" type="number" min="1" max="31" placeholder="Ex: 17">
     <button class="sbtn" onclick="salvarCartao()">Salvar</button>
     <button class="dbtn" id="btn-del-cc" style="display:none" onclick="pedirDelCartao()">🗑 Excluir cartão</button>
     <button class="cbtn" onclick="fechar('ov-cc-cad')">Cancelar</button>
@@ -358,7 +358,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v49';
+var APP_VERSION = 'v50';
 
 var currentUser = null;
 var accessToken = null;
@@ -661,8 +661,12 @@ function fixosVigentes(m,y){
 
 function periodoFatura(cc,m,y){
   var dF=cc.fecha||10;
-  var ini=new Date(y,m-2,dF+1);
-  var fim=new Date(y,m-1,dF,23,59,59);
+  var lastFim=new Date(y,m,0).getDate();
+  var lastIni=new Date(y,m-1,0).getDate();
+  var dFim=Math.min(dF,lastFim);
+  var dIni=Math.min(dF,lastIni)+1;
+  var ini=new Date(y,m-2,dIni);
+  var fim=new Date(y,m-1,dFim,23,59,59);
   return {ini:ini,fim:fim};
 }
 function gastosCC(ccId,m,y){
@@ -693,7 +697,8 @@ function syncFaturas(){
   Object.keys(combos).forEach(function(key){
     var c=combos[key];var cc=db.cartoes.find(function(x){return x.id===c.ccId;});if(!cc)return;
     var total=totalFaturaEu(c.ccId,c.m,c.y);if(total<=0)return;
-    var venceData=avanca(c.y,c.m+1,cc.vence||1,0);
+    var lastDayV=new Date(c.y,c.m+1,0).getDate();var dV=Math.min(cc.vence||1,lastDayV);
+    var venceData=avanca(c.y,c.m+1,dV,0);
     var desc='Fatura '+cc.nome+' '+MESES[c.m].substr(0,3)+'/'+c.y;
     db.lancs.push({id:db.nid++,desc:desc,val:total,data:venceData,cat:'Cartão de Crédito',tipo:'e',sub:'fat',ccId:c.ccId,ccMk:mesKey(c.m,c.y)});
   });
@@ -1420,7 +1425,7 @@ function renderFatura(ccId){
   var meus=gastos.filter(function(l){return l.titular==='eu';});var fam=gastos.filter(function(l){return l.titular==='fam';});
   var totMeu=meus.reduce(function(s,l){return s+l.val;},0);var totFam=fam.reduce(function(s,l){return s+l.val;},0);
   var p=periodoFatura(cc,m,y);var per=pad(p.ini.getDate())+'/'+pad(p.ini.getMonth()+1)+' a '+pad(p.fim.getDate())+'/'+pad(p.fim.getMonth()+1)+' ('+MESES[m]+')';
-  var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+cc.vence+'</div>'
+  var h='<div class="fat-header"><div style="font-size:11px;color:#7b80a0">Período: '+per+' · Vence dia '+(cc.vence===31?'último':cc.vence)+'</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
     +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';
   if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}

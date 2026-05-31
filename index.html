@@ -375,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v51';
+var APP_VERSION = 'v52';
 
 var currentUser = null;
 var accessToken = null;
@@ -678,12 +678,12 @@ function fixosVigentes(m,y){
 
 function periodoFatura(cc,m,y){
   var dF=cc.fecha||10;
-  var lastFim=new Date(y,m,0).getDate();
-  var lastIni=new Date(y,m-1,0).getDate();
+  var lastFim=new Date(y,m+1,0).getDate();
+  var lastIni=new Date(y,m,0).getDate();
   var dFim=Math.min(dF,lastFim);
   var dIni=Math.min(dF,lastIni)+1;
-  var ini=new Date(y,m-2,dIni);
-  var fim=new Date(y,m-1,dFim,23,59,59);
+  var ini=new Date(y,m-1,dIni);
+  var fim=new Date(y,m,dFim,23,59,59);
   return {ini:ini,fim:fim};
 }
 function gastosCC(ccId,m,y){
@@ -714,8 +714,8 @@ function syncFaturas(){
   Object.keys(combos).forEach(function(key){
     var c=combos[key];var cc=db.cartoes.find(function(x){return x.id===c.ccId;});if(!cc)return;
     var total=totalFaturaEu(c.ccId,c.m,c.y);if(total<=0)return;
-    var lastDayV=new Date(c.y,c.m+1,0).getDate();var dV=Math.min(cc.vence||1,lastDayV);
-    var venceData=avanca(c.y,c.m+1,dV,0);
+    var lastDayV=new Date(c.y,c.m+2,0).getDate();var dV=Math.min(cc.vence||1,lastDayV);
+    var venceData=avanca(c.y,c.m+2,dV,0);
     var desc='Fatura '+cc.nome+' '+MESES[c.m].substr(0,3)+'/'+c.y;
     db.lancs.push({id:db.nid++,desc:desc,val:total,data:venceData,cat:'Cartão de Crédito',tipo:'e',sub:'fat',ccId:c.ccId,ccMk:mesKey(c.m,c.y)});
   });

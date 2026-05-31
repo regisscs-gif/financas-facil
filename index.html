@@ -375,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v54';
+var APP_VERSION = 'v55';
 
 var currentUser = null;
 var accessToken = null;
@@ -1451,35 +1451,28 @@ function lerPDFFatura(file,password){
 }
 function parsearFaturaSantander(lines,existingKeys){
   var items=[],dupCount=0;
-  // Inferir mês/ano pelo vencimento
+  // Inferir mês/ano pelo primeiro DD/MM/YYYY encontrado (vencimento)
   var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
-  for(var i=0;i<lines.length;i++){
-    var m=lines[i].match(/(\d{2})\/(\d{2})\/(\d{4})/);
-    if(m&&(/Vencimento/i.test(lines[i])||(i>0&&/Vencimento/i.test(lines[i-1])))){
-      billingM=parseInt(m[2]);billingY=parseInt(m[3]);break;
-    }
+  for(var i=0;i<lines.length&&i<25;i++){
+    var mD=lines[i].match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if(mD){billingM=parseInt(mD[2]);billingY=parseInt(mD[3]);break;}
   }
   function inferYear(mm){return mm<=billingM?billingY:billingY-1;}
-  var inDetail=false,skipSec=false;
   var SKIP=/PAGAMENTO DE FATURA|ANUIDADE/i;
-  var SEC_DETAIL=/Detalhamento da Fatura|Lan[çc]amentos da Fatura|Transa[çc][õo]es/i;
-  var SEC_END=/Resumo da Fatura|Total da Fatura|Totais/i;
-  var SEC_SKIP=/Pagamento e Demais Cr|Cr[ée]ditos/i;
-  var SEC_RESUME=/^(Parcelamentos|Despesas|Compras)$/i;
+  var inDetail=false;
   for(var i=0;i<lines.length;i++){
     var line=lines[i].trim();
-    if(SEC_DETAIL.test(line)){inDetail=true;console.log('[Parse] seção encontrada na linha',i,line);continue;}
-    if(!inDetail)continue;
-    if(SEC_END.test(line)){console.log('[Parse] fim de seção na linha',i,line);break;}
-    if(SEC_SKIP.test(line)){skipSec=true;continue;}
-    if(SEC_RESUME.test(line)){skipSec=false;continue;}
-    if(/Compra\s+Data|VALOR TOTAL|^Data\s/i.test(line))continue;
-    if(skipSec)continue;
-    // Aceita DD/MM ou DD/MM/AAAA no início da linha (com ou sem prefixo numérico)
+    if(!inDetail){
+      if(/Detalhamento da Fatura/i.test(line))inDetail=true;
+      continue;
+    }
+    // Parar na seção jurídica/rodapé
+    if(/DECLARA[ÇC][ÃA]O ANUAL|Juros e Custo Efetivo Total/i.test(line))break;
+    // Aceita DD/MM ou DD/MM/AAAA no início (com ou sem prefixo numérico ex: "3   ")
     var mx=line.match(/^(?:\d+\s+)?(\d{2})\/(\d{2})(?:\/\d{4})?\s+(.+)$/);
     if(!mx)continue;
     var dd=mx[1],mm2=parseInt(mx[2]),rest=mx[3];
-    // Encontra todos os valores monetários na linha
+    // Encontra todos os valores monetários BR na linha
     var amtReg=/-?\d{1,3}(?:\.\d{3})*,\d{2}/g,amts=[],tmp;
     while((tmp=amtReg.exec(rest))!==null)amts.push(tmp);
     if(!amts.length)continue;

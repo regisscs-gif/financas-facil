@@ -375,7 +375,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v55';
+var APP_VERSION = 'v56';
 
 var currentUser = null;
 var accessToken = null;
@@ -1317,17 +1317,20 @@ function mostrarPreviewExtrato(dupCount){
     document.getElementById('ext-preview').innerHTML='<div class="empty">Nenhum lançamento novo encontrado.</div>';
   }else{
     document.getElementById('ext-preview').innerHTML=extratoImportBuffer.map(function(r,i){
-      var p=r.data.split('-');
+      var dispDate=r.origData||r.data;var p=dispDate.split('-');
       var cor=r.tipo==='r'?'#06d6a0':'#ef476f';
       var sinal=r.tipo==='r'?'+':'-';
       var faturaNote=r.isFatura?'<span style="font-size:9px;color:#a5b4fc;margin-left:4px">já no cartão</span>':'';
+      var parcTag=r.isParcela?'<span style="font-size:9px;background:rgba(108,99,255,.2);color:#a78bfa;border-radius:3px;padding:1px 4px;flex-shrink:0">'+r.pn+'/'+r.pt+'</span>':'';
+      var futTag=(r.isParcela&&r.futureDates.length)?'<span style="font-size:9px;color:#7b80a0;flex-shrink:0">+'+r.futureDates.filter(function(f){return!f.dup;}).length+'↗</span>':'';
       var cats=r.tipo==='r'?db.catsR:db.catsE;
       var catOpts=cats.map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
       return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a">'
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="extratoSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
-        +faturaNote
+        +faturaNote+parcTag
         +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var exp=s.whiteSpace===\'normal\';s.whiteSpace=exp?\'nowrap\':\'normal\';s.overflow=exp?\'hidden\':\'visible\'">'+escHtml(r.desc)+'</span>'
+        +futTag
         +'<select onchange="extratoSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'
         +catOpts
         +'</select>'
@@ -1343,13 +1346,27 @@ function confirmarImportExtrato(){
   var itens=extratoImportBuffer.filter(function(r){return r.include;});
   if(!itens.length)return;
   if(importModo==='fatura'){
+    var totalFuturos=0;
     itens.forEach(function(r){
-      db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'av',csvKey:r.csvKey});
+      if(r.isParcela){
+        var pid=db.nid;
+        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'pa',pn:r.pn,pt:r.pt,pid:pid,csvKey:r.csvKey});
+        r.futureDates.forEach(function(f){
+          if(!f.dup){
+            db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:f.data,cat:r.cat,titular:'eu',sub:'pa',pn:f.pn,pt:f.pt,pid:pid,csvKey:f.csvKey});
+            totalFuturos++;
+          }
+        });
+      } else {
+        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'av',csvKey:r.csvKey});
+      }
     });
-    log('fatura_pdf_import',{count:itens.length,ccId:fatCCId});
+    log('fatura_pdf_import',{count:itens.length,futuros:totalFuturos,ccId:fatCCId});
     importModo='extrato';
     fechar('ov-import-extrato');salvar();syncFaturas();
-    toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
+    var msg='✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!';
+    if(totalFuturos)msg+=' +'+totalFuturos+' parcela'+(totalFuturos!==1?'s':'')+' futura'+(totalFuturos!==1?'s':'')+' criada'+(totalFuturos!==1?'s':'')+'!';
+    toast(msg);
     extratoImportBuffer=[];fixosParaSuprimir=[];render();
     return;
   }
@@ -1457,6 +1474,12 @@ function parsearFaturaSantander(lines,existingKeys){
     var mD=lines[i].match(/(\d{2})\/(\d{2})\/(\d{4})/);
     if(mD){billingM=parseInt(mD[2]);billingY=parseInt(mD[3]);break;}
   }
+  // Retorna "YYYY-MM-10" para o mês de cobrança k meses à frente
+  function billingDate(k){
+    var m=billingM-1+k,y=billingY;
+    if(m<1){m+=12;y--;}while(m>12){m-=12;y++;}
+    return y+'-'+pad(m)+'-10';
+  }
   function inferYear(mm){return mm<=billingM?billingY:billingY-1;}
   var SKIP=/PAGAMENTO DE FATURA|ANUIDADE/i;
   var inDetail=false;
@@ -1466,29 +1489,51 @@ function parsearFaturaSantander(lines,existingKeys){
       if(/Detalhamento da Fatura/i.test(line))inDetail=true;
       continue;
     }
-    // Parar na seção jurídica/rodapé
     if(/DECLARA[ÇC][ÃA]O ANUAL|Juros e Custo Efetivo Total/i.test(line))break;
-    // Aceita DD/MM ou DD/MM/AAAA no início (com ou sem prefixo numérico ex: "3   ")
     var mx=line.match(/^(?:\d+\s+)?(\d{2})\/(\d{2})(?:\/\d{4})?\s+(.+)$/);
     if(!mx)continue;
     var dd=mx[1],mm2=parseInt(mx[2]),rest=mx[3];
-    // Encontra todos os valores monetários BR na linha
     var amtReg=/-?\d{1,3}(?:\.\d{3})*,\d{2}/g,amts=[],tmp;
     while((tmp=amtReg.exec(rest))!==null)amts.push(tmp);
     if(!amts.length)continue;
     var idx=amts.length-1;
     if(idx>0&&amts[idx][0]==='0,00')idx--;
-    var amtStr=amts[idx][0];
-    var desc=rest.substring(0,amts[idx].index).trim().replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    // Detecta parcelamento: padrão NN/TT antes do valor (ex: "04/05" = parcela 4 de 5)
+    var preAmt=rest.substring(0,amts[idx].index).trim();
+    var parcMatch=preAmt.match(/\s+(\d{2})\/(\d{2})\s*$/);
+    var isParcela=false,pn=0,pt=0;
+    if(parcMatch){
+      var pnv=parseInt(parcMatch[1]),ptv=parseInt(parcMatch[2]);
+      if(ptv>1&&pnv>=1&&pnv<=ptv){isParcela=true;pn=pnv;pt=ptv;}
+    }
+    var desc=preAmt.replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
     if(!desc||SKIP.test(desc))continue;
-    var val=parseValorExtrato(amtStr);
+    var val=parseValorExtrato(amts[idx][0]);
     if(isNaN(val)||val<=0)continue;
-    var y=inferYear(mm2);
-    var data=y+'-'+pad(mm2)+'-'+pad(parseInt(dd));
     var valAbs=Math.round(val*100)/100;
-    var csvKey=data+'|'+desc+'|'+valAbs;
+    var data,csvKey,origData;
+    if(isParcela){
+      // Para parcelas: usa dia 10 do mês de fatura (data compra original fora do período)
+      data=billingDate(0);
+      origData=inferYear(mm2)+'-'+pad(mm2)+'-'+pad(parseInt(dd));
+      csvKey=data+'|'+desc+'|'+valAbs;
+    } else {
+      var y=inferYear(mm2);
+      data=y+'-'+pad(mm2)+'-'+pad(parseInt(dd));
+      origData=data;
+      csvKey=data+'|'+desc+'|'+valAbs;
+    }
     if(existingKeys[csvKey]){dupCount++;continue;}
-    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false});
+    // Parcelas futuras (pn+1 até pt)
+    var futureDates=[];
+    if(isParcela){
+      for(var fk=1;fk<=pt-pn;fk++){
+        var fd=billingDate(fk);
+        var fcsv=fd+'|'+desc+'|'+valAbs;
+        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[fcsv]});
+      }
+    }
+    items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
   }
   return{items:items,dupCount:dupCount};
 }

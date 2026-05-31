@@ -1,4 +1,4 @@
-var CACHE = 'ff-v55';
+var CACHE = 'ff-v56';
 var SHELL = ['/financas-facil/', '/financas-facil/index.html'];
 
 self.addEventListener('install', function(e) {

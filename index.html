@@ -359,13 +359,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 <div class="ov" id="ov-pdf-pass">
   <div class="mod">
     <h3>Abrir fatura PDF</h3>
-    <div style="font-size:12px;color:#7b80a0;margin-bottom:14px">Informe a senha e selecione o banco e o cartão correspondente.</div>
-    <label>Banco</label>
-    <select id="pdf-banco-sel" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%;margin-bottom:4px">
-      <option value="santander">Santander</option>
-      <option value="itau">Itaú</option>
-    </select>
-    <label style="margin-top:10px">Senha do arquivo</label>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:14px">Informe a senha do arquivo (geralmente o CPF sem pontos) e selecione o cartão correspondente.</div>
+    <label>Senha do arquivo</label>
     <input id="pdf-pass-inp" type="password" placeholder="Ex: CPF sem pontos" autocomplete="off">
     <label style="margin-top:10px">Cartão</label>
     <select id="pdf-card-sel" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%;margin-bottom:4px"></select>
@@ -1405,10 +1400,14 @@ document.getElementById('cc-pdf-input').addEventListener('change',function(e){
   document.getElementById('pdf-pass-inp').value='';
   document.getElementById('ov-pdf-pass').classList.add('on');
 });
+function detectarBancoPDF(lines){
+  // Normaliza as primeiras 40 linhas e procura marca do Itaú
+  var head=lines.slice(0,40).join(' ').replace(/\s+/g,'');
+  return /Ita[uú]|ITAUUNIBANCO/i.test(head)?'itau':'santander';
+}
 function confirmarSenhaPDF(){
   var password=document.getElementById('pdf-pass-inp').value.trim();
   var ccId=parseInt(document.getElementById('pdf-card-sel').value);
-  var banco=document.getElementById('pdf-banco-sel').value;
   if(!password){toast('Informe a senha');return;}
   if(!ccId){toast('Cadastre um cartão primeiro');return;}
   fatCCId=ccId;
@@ -1419,6 +1418,7 @@ function confirmarSenhaPDF(){
       console.log('[PDF] Total de linhas extraídas:', lines.length);
       lines.forEach(function(l,i){console.log('['+i+']',l);});
       for(var _b=0;_b<lines.length;_b+=40){log('pdf_linhas_'+Math.floor(_b/40),{de:_b,linhas:lines.slice(_b,_b+40)});}
+      var banco=detectarBancoPDF(lines);
       var existingKeys={};
       db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
       var res=banco==='itau'?parsearFaturaItau(lines,existingKeys):parsearFaturaSantander(lines,existingKeys);

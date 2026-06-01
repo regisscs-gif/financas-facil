@@ -423,7 +423,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v59';
+var APP_VERSION = 'v60';
 
 var currentUser = null;
 var accessToken = null;
@@ -1805,6 +1805,7 @@ function renderCofrinhos(){
   }).join('');
 }
 function abrirCadCofrinho(id){
+  log('cof_open',{id:id||null});
   editCofId=id||null;
   var c=id?(db.cofrinhos||[]).find(function(x){return x.id===id;}):null;
   document.getElementById('cof-cad-nome').value=c?c.nome:'';
@@ -2150,6 +2151,10 @@ init();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/financas-facil/sw.js');
+  // Quando um novo SW assume controle, recarrega para garantir código atualizado
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    window.location.reload();
+  });
 }
 </script>
 </body>

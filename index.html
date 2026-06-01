@@ -1808,7 +1808,7 @@ function abrirCadCofrinho(id){
   editCofId=id||null;
   var c=id?(db.cofrinhos||[]).find(function(x){return x.id===id;}):null;
   document.getElementById('cof-cad-nome').value=c?c.nome:'';
-  abrir('ov-cof-cad');
+  document.getElementById('ov-cof-cad').classList.add('on');
 }
 function confirmarCadCofrinho(){
   var nome=document.getElementById('cof-cad-nome').value.trim();
@@ -1830,7 +1830,7 @@ function excluirCofrinho(id){
   });
 }
 function abrirCofDetalhe(id){
-  _cofDetalheId=id;renderCofDetalhe();abrir('ov-cof-detalhe');
+  _cofDetalheId=id;renderCofDetalhe();document.getElementById('ov-cof-detalhe').classList.add('on');
 }
 function renderCofDetalhe(){
   var id=_cofDetalheId;
@@ -1871,7 +1871,7 @@ function abrirCofMov(cofId,tipo){
   document.getElementById('cof-mov-val').value='';
   document.getElementById('cof-mov-desc').value='';
   document.getElementById('cof-mov-data').value=new Date().toISOString().slice(0,10);
-  abrir('ov-cof-mov');
+  document.getElementById('ov-cof-mov').classList.add('on');
 }
 function confirmarCofMov(){
   var val=parseFloat(document.getElementById('cof-mov-val').value.replace(',','.'));
@@ -1912,7 +1912,7 @@ function abrirResumoFamilia(ccId){
   var texto='Gastos Família — '+mes+'\n'+sep+'\n'+linhas.join('\n')+'\n'+sep+'\nTotal'+Array(29).join(' ')+fmt(total);
   _resumoFamiliaText=texto;
   document.getElementById('resumo-familia-content').textContent=texto;
-  abrir('ov-resumo-familia');
+  document.getElementById('ov-resumo-familia').classList.add('on');
 }
 function compartilharResumoFamilia(){
   if(navigator.share){

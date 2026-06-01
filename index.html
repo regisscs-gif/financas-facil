@@ -423,7 +423,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v60';
+var APP_VERSION = 'v61';
 
 var currentUser = null;
 var accessToken = null;
@@ -1816,18 +1816,21 @@ function confirmarCadCofrinho(){
   if(!nome){toast('Informe o nome do cofrinho.');return;}
   if(!db.cofrinhos)db.cofrinhos=[];
   if(!db.ncid)db.ncid=1;
+  var wasEdit=!!editCofId;var cof_id=editCofId;
   if(editCofId){
     db.cofrinhos=db.cofrinhos.map(function(c){return c.id===editCofId?Object.assign({},c,{nome:nome}):c;});
   }else{
     db.cofrinhos.push({id:db.ncid++,nome:nome});
   }
   fechar('ov-cof-cad');salvar();renderCofrinhos();
+  if(wasEdit)abrirCofDetalhe(cof_id);
 }
 function excluirCofrinho(id){
+  fechar('ov-cof-detalhe');
   confirmar('Excluir este cofrinho e todo o seu histórico?',function(){
     db.cofrinhos=(db.cofrinhos||[]).filter(function(c){return c.id!==id;});
     db.cofrinhoMovs=(db.cofrinhoMovs||[]).filter(function(m){return m.cofId!==id;});
-    fechar('ov-cof-detalhe');salvar();renderCofrinhos();
+    salvar();renderCofrinhos();
   });
 }
 function abrirCofDetalhe(id){
@@ -1842,7 +1845,7 @@ function renderCofDetalhe(){
     +'<div><div style="font-size:16px;font-weight:800;color:#e8eaf6">'+escHtml(c.nome)+'</div>'
     +'<div style="font-size:20px;font-weight:800;color:#06d6a0;margin-top:2px">'+fmt(saldo)+'</div></div>'
     +'<div style="display:flex;gap:6px">'
-    +'<button onclick="abrirCadCofrinho('+id+')" style="background:rgba(255,255,255,.1);border:none;color:#e8eaf6;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:13px">✏️</button>'
+    +'<button onclick="fechar(\'ov-cof-detalhe\');abrirCadCofrinho('+id+')" style="background:rgba(255,255,255,.1);border:none;color:#e8eaf6;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:13px">✏️</button>'
     +'<button onclick="excluirCofrinho('+id+')" style="background:rgba(239,71,111,.15);border:none;color:#ef476f;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:13px">🗑️</button>'
     +'</div></div>'
     +'<div style="display:flex;gap:8px;margin-bottom:16px">'

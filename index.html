@@ -356,6 +356,15 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="cbtn" onclick="fechar('ov-import-csv')">Cancelar</button>
   </div>
 </div>
+<div class="ov" id="ov-resumo-familia">
+  <div class="mod">
+    <h3>Resumo Família</h3>
+    <div id="resumo-familia-content" style="font-family:monospace;font-size:11px;white-space:pre-wrap;background:#22263a;padding:12px;border-radius:8px;margin-bottom:14px;color:#e8eaf6;line-height:1.6;overflow-x:auto"></div>
+    <button class="sbtn" onclick="compartilharResumoFamilia()">📤 Compartilhar</button>
+    <button class="cbtn" onclick="fechar('ov-resumo-familia')">Fechar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-pdf-pass">
   <div class="mod">
     <h3>Abrir fatura PDF</h3>
@@ -375,7 +384,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v57';
+var APP_VERSION = 'v58';
 
 var currentUser = null;
 var accessToken = null;
@@ -1726,6 +1735,36 @@ function renderParc(){
   }).join('');
 }
 function excluirParcelamento(pid){confirmar('Remover todas as parcelas?',function(){db.lancs=db.lancs.filter(function(l){return!(l.sub==='pa'&&l.pid===+pid);});salvar();toast('Parcelamento removido!');render();});}
+var _resumoFamiliaText='';
+function abrirResumoFamilia(ccId){
+  var fam=[];
+  db.cartoes.forEach(function(cc){
+    gastosCC(cc.id,curM,curY).filter(function(l){return l.titular==='fam';}).forEach(function(l){fam.push(l);});
+  });
+  if(ccId){fam=gastosCC(ccId,curM,curY).filter(function(l){return l.titular==='fam';});}
+  fam.sort(function(a,b){return a.data.localeCompare(b.data);});
+  if(!fam.length){toast('Sem gastos familiares neste mês.');return;}
+  var total=fam.reduce(function(s,l){return s+l.val;},0);
+  var mes=MESES[curM]+' '+curY;
+  var sep='─'.repeat(40);
+  var linhas=fam.map(function(l){
+    var dp=l.data.split('-');var d=dp[2]+'/'+dp[1];
+    var desc=l.desc.length>26?l.desc.substring(0,25)+'…':l.desc;
+    var v=fmt(l.val);
+    return d+'  '+desc+Array(28-desc.length>0?28-desc.length:1).join(' ')+v;
+  });
+  var texto='Gastos Família — '+mes+'\n'+sep+'\n'+linhas.join('\n')+'\n'+sep+'\nTotal'+Array(29).join(' ')+fmt(total);
+  _resumoFamiliaText=texto;
+  document.getElementById('resumo-familia-content').textContent=texto;
+  abrir('ov-resumo-familia');
+}
+function compartilharResumoFamilia(){
+  if(navigator.share){
+    navigator.share({title:'Gastos Família',text:_resumoFamiliaText}).catch(function(){});
+  }else{
+    navigator.clipboard.writeText(_resumoFamiliaText).then(function(){toast('Copiado!');}).catch(function(){toast('Não foi possível copiar.');});
+  }
+}
 function renderCCs(){
   if(curCCId){renderFatura(curCCId);return;}var el=document.getElementById('cc-list');
   if(!db.cartoes.length){el.innerHTML='<div class="empty">Nenhum cartão cadastrado.<br>Toque + para adicionar (máx. 2).</div>';return;}
@@ -1745,7 +1784,7 @@ function renderFatura(ccId){
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><div style="font-size:11px;color:#7b80a0">Seus gastos</div><div style="font-size:20px;font-weight:800;color:#ef476f">'+fmt(totMeu)+'</div></div>'
     +(totFam>0?'<div style="text-align:right"><div style="font-size:11px;color:#ffd166">A reembolsar</div><div style="font-size:16px;font-weight:700;color:#ffd166">'+fmt(totFam)+'</div></div>':'')+'</div></div>';
   if(meus.length){h+='<div class="card"><div class="sec">👤 Meus gastos</div>';meus.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(239,71,111,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival r">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
-  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166">👥 Familiar (a reembolsar)</div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
+  if(fam.length){h+='<div class="card"><div class="sec" style="color:#ffd166;display:flex;justify-content:space-between;align-items:center"><span>👥 Familiar (a reembolsar)</span><button onclick="abrirResumoFamilia('+ccId+')" style="font-size:10px;padding:3px 8px;background:rgba(255,209,102,.2);color:#ffd166;border:1px solid rgba(255,209,102,.35);border-radius:6px;cursor:pointer;font-weight:600">📤 Resumo</button></div>';fam.forEach(function(l){var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var lp=l.data.split('-');h+='<div class="it"><div class="ico" style="background:rgba(255,209,102,.15)">'+emo(l.cat)+'</div><div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+lp[2]+' '+MABR[+lp[1]-1]+'</div></div><div class="ival" style="color:#ffd166">-'+fmt(l.val)+'</div><button class="ebtn" onclick="abrirEditarGastoCC('+l.id+')">✏️</button></div>';});h+='</div>';}
   if(!gastos.length)h+='<div class="empty">Nenhum gasto nesta fatura.<br>Toque + para adicionar.</div>';
   document.getElementById('cc-fatura-content').innerHTML=h;
 }

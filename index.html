@@ -195,7 +195,10 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div style="font-size:15px;font-weight:700">🐷 Reservas</div>
-        <button onclick="abrirCadCofrinho()" style="background:rgba(6,214,160,.2);border:1px solid rgba(6,214,160,.4);color:#06d6a0;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">+ Cofrinho</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="abrirAtualizarSaldo()" style="background:rgba(165,180,252,.15);border:1px solid rgba(165,180,252,.35);color:#a5b4fc;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">📈 Rendimento</button>
+          <button onclick="abrirCadCofrinho()" style="background:rgba(6,214,160,.2);border:1px solid rgba(6,214,160,.4);color:#06d6a0;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">+ Cofrinho</button>
+        </div>
       </div>
       <div id="cof-total" style="font-size:12px;color:#7b80a0;margin-bottom:10px"></div>
       <div id="cof-list"></div>
@@ -375,6 +378,25 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-cof-rendimento">
+  <div class="mod">
+    <h3>📈 Atualizar Rendimento</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:4px">Total nos cofrinhos</div>
+    <div id="cof-rend-total" style="font-size:18px;font-weight:800;color:#06d6a0;margin-bottom:14px"></div>
+    <label>Saldo real na poupança (R$)</label>
+    <input id="cof-rend-input" type="number" min="0" step="0.01" placeholder="0,00" oninput="calcRendimento()">
+    <div id="cof-rend-diff" style="display:none;margin-top:12px;padding:10px;background:#22263a;border-radius:8px;font-size:13px;line-height:1.5"></div>
+    <div id="cof-rend-destino" style="display:none;margin-top:12px">
+      <label>Depositar rendimento em</label>
+      <select id="cof-rend-cof" style="background:#22263a;border:1px solid #3a3f5c;color:#e8eaf6;border-radius:8px;padding:10px;font-size:14px;width:100%"></select>
+      <label style="margin-top:10px">Descrição</label>
+      <input id="cof-rend-desc" placeholder="Ex: Rendimento poupança">
+    </div>
+    <button class="sbtn" style="margin-top:14px" onclick="confirmarRendimento()">Confirmar</button>
+    <button class="cbtn" onclick="fechar('ov-cof-rendimento')">Cancelar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-cof-cad">
   <div class="mod">
     <h3>Cofrinho</h3>
@@ -425,7 +447,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v62';
+var APP_VERSION = 'v63';
 
 var currentUser = null;
 var accessToken = null;
@@ -1893,6 +1915,53 @@ function confirmarCofMov(){
 function excluirCofMov(id){
   db.cofrinhoMovs=(db.cofrinhoMovs||[]).filter(function(m){return m.id!==id;});
   salvar();renderCofDetalhe();renderCofrinhos();
+}
+function abrirAtualizarSaldo(){
+  if(!(db.cofrinhos||[]).length){toast('Crie ao menos um cofrinho primeiro.');return;}
+  var total=(db.cofrinhos||[]).reduce(function(s,c){return s+cofSaldo(c.id);},0);
+  document.getElementById('cof-rend-total').textContent=fmt(total);
+  document.getElementById('cof-rend-input').value='';
+  document.getElementById('cof-rend-diff').style.display='none';
+  document.getElementById('cof-rend-destino').style.display='none';
+  var sel=document.getElementById('cof-rend-cof');
+  sel.innerHTML=(db.cofrinhos||[]).map(function(c){return'<option value="'+c.id+'">'+escHtml(c.nome)+'</option>';}).join('');
+  document.getElementById('cof-rend-desc').value='Rendimento poupança';
+  document.getElementById('ov-cof-rendimento').classList.add('on');
+}
+function calcRendimento(){
+  var totalCofs=(db.cofrinhos||[]).reduce(function(s,c){return s+cofSaldo(c.id);},0);
+  var v=document.getElementById('cof-rend-input').value.replace(',','.');
+  var real=parseFloat(v);
+  var diffEl=document.getElementById('cof-rend-diff');
+  var destEl=document.getElementById('cof-rend-destino');
+  if(isNaN(real)||v===''){diffEl.style.display='none';destEl.style.display='none';return;}
+  var diff=Math.round((real-totalCofs)*100)/100;
+  diffEl.style.display='block';
+  if(diff>0){
+    diffEl.innerHTML='📈 Rendimento calculado: <b style="color:#06d6a0">+'+fmt(diff)+'</b>';
+    destEl.style.display='block';
+  }else if(diff<0){
+    diffEl.innerHTML='⚠️ Saldo <b style="color:#ef476f">'+fmt(Math.abs(diff))+'</b> abaixo do total — pode haver uma saída não registrada.';
+    destEl.style.display='none';
+  }else{
+    diffEl.innerHTML='<span style="color:#7b80a0">Saldo igual ao total dos cofrinhos — nenhum rendimento a registrar.</span>';
+    destEl.style.display='none';
+  }
+}
+function confirmarRendimento(){
+  var totalCofs=(db.cofrinhos||[]).reduce(function(s,c){return s+cofSaldo(c.id);},0);
+  var real=parseFloat(document.getElementById('cof-rend-input').value.replace(',','.'));
+  if(isNaN(real)){toast('Informe o saldo real.');return;}
+  var diff=Math.round((real-totalCofs)*100)/100;
+  if(diff<=0){fechar('ov-cof-rendimento');return;}
+  var cofId=parseInt(document.getElementById('cof-rend-cof').value);
+  if(!cofId){toast('Selecione um cofrinho.');return;}
+  var desc=document.getElementById('cof-rend-desc').value.trim()||'Rendimento poupança';
+  if(!db.cofrinhoMovs)db.cofrinhoMovs=[];
+  if(!db.nmid)db.nmid=1;
+  db.cofrinhoMovs.push({id:db.nmid++,cofId:cofId,val:diff,desc:desc,data:new Date().toISOString().slice(0,10)});
+  fechar('ov-cof-rendimento');salvar();renderCofrinhos();
+  toast('✓ Rendimento de '+fmt(diff)+' adicionado!');
 }
 // ── FIM COFRINHOS ─────────────────────────────────────────
 var _resumoFamiliaText='';

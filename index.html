@@ -1257,6 +1257,21 @@ function parsearLinhasExtrato(rows){
 function extratoSetDesc(i,v){extratoImportBuffer[i].desc=v;}
 function extratoSetCat(i,v){extratoImportBuffer[i].cat=v;}
 function extratoSetInclude(i,c){extratoImportBuffer[i].include=c;atualizarBtnExtrato();}
+function extratoSetTitular(i,t){
+  extratoImportBuffer[i].titular=t;
+  var btn=document.getElementById('ext-tit-'+i);if(!btn)return;
+  var fam=t==='fam';
+  btn.textContent=fam?'FAM':'EU';
+  btn.style.background=fam?'rgba(255,209,102,.3)':'rgba(239,71,111,.25)';
+  btn.style.color=fam?'#ffd166':'#ef476f';
+}
+function extratoSetTitularAll(t){
+  extratoImportBuffer.forEach(function(r,i){extratoSetTitular(i,t);});
+  var fam=t==='fam';
+  var eu=document.getElementById('ext-tit-all-eu'),fm=document.getElementById('ext-tit-all-fam');
+  if(eu){eu.style.background=fam?'rgba(100,100,100,.2)':'rgba(239,71,111,.3)';eu.style.color=fam?'#7b80a0':'#ef476f';}
+  if(fm){fm.style.background=fam?'rgba(255,209,102,.3)':'rgba(100,100,100,.2)';fm.style.color=fam?'#ffd166':'#7b80a0';}
+}
 function extratoSetTipo(i,t){
   extratoImportBuffer[i].tipo=t;
   var cats=t==='r'?db.catsR:db.catsE;
@@ -1290,9 +1305,18 @@ function mostrarPreviewExtrato(dupCount){
   }
 
   var n=extratoImportBuffer.length;
+  // Inicializa titular em todos os itens (padrão 'eu')
+  extratoImportBuffer.forEach(function(r){if(!r.titular)r.titular='eu';});
+  var titGlobal=importModo==='fatura'
+    ?'<div style="margin-top:8px;display:flex;align-items:center;gap:6px">'
+      +'<span style="font-size:11px;color:#7b80a0">Titular padrão:</span>'
+      +'<button id="ext-tit-all-eu" onclick="extratoSetTitularAll(\'eu\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(239,71,111,.3);color:#ef476f">EU</button>'
+      +'<button id="ext-tit-all-fam" onclick="extratoSetTitularAll(\'fam\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(100,100,100,.2);color:#7b80a0">FAM</button>'
+      +'</div>':'';
   document.getElementById('ext-summary').innerHTML=
     '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b>'
-    +'<span style="margin-left:10px">'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>';
+    +'<span style="margin-left:10px">'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>'
+    +titGlobal;
 
   // Seção de fixos para suprimir (só no modo extrato)
   var hf='';
@@ -1334,6 +1358,7 @@ function mostrarPreviewExtrato(dupCount){
         +'<select onchange="extratoSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'
         +catOpts
         +'</select>'
+        +(importModo==='fatura'?'<button id="ext-tit-'+i+'" onclick="extratoSetTitular('+i+',extratoImportBuffer['+i+'].titular===\'eu\'?\'fam\':\'eu\')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:rgba(239,71,111,.25);color:#ef476f">EU</button>':'')
         +'<span id="ext-val-'+i+'" style="font-size:12px;font-weight:700;color:'+cor+';flex-shrink:0;min-width:64px;text-align:right">'+sinal+fmt(r.val)+'</span>'
         +'</div>';
     }).join('');
@@ -1350,15 +1375,16 @@ function confirmarImportExtrato(){
     itens.forEach(function(r){
       if(r.isParcela){
         var pid=db.nid;
-        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'pa',pn:r.pn,pt:r.pt,pid:pid,csvKey:r.csvKey});
+        var tit=r.titular||'eu';
+        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:tit,sub:'pa',pn:r.pn,pt:r.pt,pid:pid,csvKey:r.csvKey});
         r.futureDates.forEach(function(f){
           if(!f.dup){
-            db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:f.data,cat:r.cat,titular:'eu',sub:'pa',pn:f.pn,pt:f.pt,pid:pid,csvKey:f.csvKey});
+            db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:f.data,cat:r.cat,titular:tit,sub:'pa',pn:f.pn,pt:f.pt,pid:pid,csvKey:f.csvKey});
             totalFuturos++;
           }
         });
       } else {
-        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:'eu',sub:'av',csvKey:r.csvKey});
+        db.ccLancs.push({id:db.nid++,ccId:fatCCId,desc:r.desc,val:r.val,data:r.data,cat:r.cat,titular:r.titular||'eu',sub:'av',csvKey:r.csvKey});
       }
     });
     log('fatura_pdf_import',{count:itens.length,futuros:totalFuturos,ccId:fatCCId});

@@ -191,6 +191,14 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       </div>
     </div>
     <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:700">🐷 Reservas</div>
+        <button onclick="abrirCadCofrinho()" style="background:rgba(6,214,160,.2);border:1px solid rgba(6,214,160,.4);color:#06d6a0;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">+ Cofrinho</button>
+      </div>
+      <div id="cof-total" style="font-size:12px;color:#7b80a0;margin-bottom:10px"></div>
+      <div id="cof-list"></div>
+    </div>
+    <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:4px">🪵 Log de atividade</div>
       <div style="font-size:11px;color:#7b80a0;margin-bottom:10px">Últimas 80 ações. Copie e envie ao suporte para reportar problemas.</div>
       <div id="log-entries" style="max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
@@ -365,6 +373,37 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-cof-cad">
+  <div class="mod">
+    <h3>Cofrinho</h3>
+    <label>Nome</label>
+    <input id="cof-cad-nome" placeholder="Ex: 13º Salário, Férias...">
+    <button class="sbtn" style="margin-top:14px" onclick="confirmarCadCofrinho()">Salvar</button>
+    <button class="cbtn" onclick="fechar('ov-cof-cad')">Cancelar</button>
+  </div>
+</div>
+
+<div class="ov" id="ov-cof-detalhe">
+  <div class="mod">
+    <div id="cof-detalhe-content"></div>
+    <button class="cbtn" style="margin-top:10px" onclick="fechar('ov-cof-detalhe')">Fechar</button>
+  </div>
+</div>
+
+<div class="ov" id="ov-cof-mov">
+  <div class="mod">
+    <h3 id="cof-mov-titulo">Entrada</h3>
+    <label>Valor (R$)</label>
+    <input id="cof-mov-val" type="number" min="0.01" step="0.01" placeholder="0.00">
+    <label style="margin-top:10px">Descrição</label>
+    <input id="cof-mov-desc" placeholder="Ex: Depósito 13º salário">
+    <label style="margin-top:10px">Data</label>
+    <input id="cof-mov-data" type="date">
+    <button class="sbtn" style="margin-top:14px" onclick="confirmarCofMov()">Salvar</button>
+    <button class="cbtn" onclick="fechar('ov-cof-mov')">Cancelar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-pdf-pass">
   <div class="mod">
     <h3>Abrir fatura PDF</h3>
@@ -384,7 +423,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v58';
+var APP_VERSION = 'v59';
 
 var currentUser = null;
 var accessToken = null;
@@ -523,7 +562,8 @@ var db = {
   catsR:['Salário','Freelance','Investimentos','Outros'],
   catsE:['Moradia','Alimentação','Transporte','Saúde','Lazer','Educação','Vestuário','Outros'],
   cfg:{ modelo:'cal', diaInicio:1 }, // ciclo financeiro
-  nid:1, ngid:1, noid:1
+  cofrinhos:[], cofrinhoMovs:[],
+  nid:1, ngid:1, noid:1, ncid:1, nmid:1
 };
 
 var curM=new Date().getMonth(), curY=new Date().getFullYear();
@@ -1687,7 +1727,7 @@ function itemFixoMesHTML(f,mk){
 
 function render(){
   document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
-  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();
+  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
 }
 function renderDash(){
   var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;
@@ -1735,6 +1775,122 @@ function renderParc(){
   }).join('');
 }
 function excluirParcelamento(pid){confirmar('Remover todas as parcelas?',function(){db.lancs=db.lancs.filter(function(l){return!(l.sub==='pa'&&l.pid===+pid);});salvar();toast('Parcelamento removido!');render();});}
+// ── COFRINHOS (RESERVAS) ──────────────────────────────────
+var editCofId=null, movCofId=null, movTipo='entrada', _cofDetalheId=null;
+
+function cofSaldo(cofId){
+  return (db.cofrinhoMovs||[]).filter(function(m){return m.cofId===cofId;}).reduce(function(s,m){return s+m.val;},0);
+}
+function renderCofrinhos(){
+  var el=document.getElementById('cof-list');if(!el)return;
+  var cofrinhos=db.cofrinhos||[];
+  var total=cofrinhos.reduce(function(s,c){return s+cofSaldo(c.id);},0);
+  var totEl=document.getElementById('cof-total');
+  if(!cofrinhos.length){
+    el.innerHTML='<div style="font-size:12px;color:#7b80a0;text-align:center;padding:10px 0">Nenhum cofrinho ainda. Toque "+ Cofrinho" para criar.</div>';
+    if(totEl)totEl.innerHTML='';return;
+  }
+  if(totEl)totEl.innerHTML='Total poupado: <b style="color:#06d6a0">'+fmt(total)+'</b>';
+  el.innerHTML=cofrinhos.map(function(c){
+    var saldo=cofSaldo(c.id);
+    var pct=total>0?Math.round((saldo/total)*100):0;
+    return '<div onclick="abrirCofDetalhe('+c.id+')" style="cursor:pointer;padding:10px 0;border-bottom:1px solid #2a2f4a">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
+      +'<span style="font-size:13px;font-weight:600;color:#e8eaf6">'+escHtml(c.nome)+'</span>'
+      +'<span style="font-size:13px;font-weight:700;color:#06d6a0">'+fmt(saldo)+'</span></div>'
+      +'<div style="background:#22263a;border-radius:99px;height:6px;overflow:hidden">'
+      +'<div style="width:'+pct+'%;background:#06d6a0;height:100%;border-radius:99px;transition:width .3s"></div></div>'
+      +'<div style="font-size:10px;color:#7b80a0;margin-top:3px">'+pct+'% do total · toque para ver histórico</div>'
+      +'</div>';
+  }).join('');
+}
+function abrirCadCofrinho(id){
+  editCofId=id||null;
+  var c=id?(db.cofrinhos||[]).find(function(x){return x.id===id;}):null;
+  document.getElementById('cof-cad-nome').value=c?c.nome:'';
+  abrir('ov-cof-cad');
+}
+function confirmarCadCofrinho(){
+  var nome=document.getElementById('cof-cad-nome').value.trim();
+  if(!nome){toast('Informe o nome do cofrinho.');return;}
+  if(!db.cofrinhos)db.cofrinhos=[];
+  if(!db.ncid)db.ncid=1;
+  if(editCofId){
+    db.cofrinhos=db.cofrinhos.map(function(c){return c.id===editCofId?Object.assign({},c,{nome:nome}):c;});
+  }else{
+    db.cofrinhos.push({id:db.ncid++,nome:nome});
+  }
+  fechar('ov-cof-cad');salvar();renderCofrinhos();
+}
+function excluirCofrinho(id){
+  confirmar('Excluir este cofrinho e todo o seu histórico?',function(){
+    db.cofrinhos=(db.cofrinhos||[]).filter(function(c){return c.id!==id;});
+    db.cofrinhoMovs=(db.cofrinhoMovs||[]).filter(function(m){return m.cofId!==id;});
+    fechar('ov-cof-detalhe');salvar();renderCofrinhos();
+  });
+}
+function abrirCofDetalhe(id){
+  _cofDetalheId=id;renderCofDetalhe();abrir('ov-cof-detalhe');
+}
+function renderCofDetalhe(){
+  var id=_cofDetalheId;
+  var c=(db.cofrinhos||[]).find(function(x){return x.id===id;});if(!c)return;
+  var movs=(db.cofrinhoMovs||[]).filter(function(m){return m.cofId===id;}).sort(function(a,b){return b.data.localeCompare(a.data);});
+  var saldo=movs.reduce(function(s,m){return s+m.val;},0);
+  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
+    +'<div><div style="font-size:16px;font-weight:800;color:#e8eaf6">'+escHtml(c.nome)+'</div>'
+    +'<div style="font-size:20px;font-weight:800;color:#06d6a0;margin-top:2px">'+fmt(saldo)+'</div></div>'
+    +'<div style="display:flex;gap:6px">'
+    +'<button onclick="abrirCadCofrinho('+id+')" style="background:rgba(255,255,255,.1);border:none;color:#e8eaf6;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:13px">✏️</button>'
+    +'<button onclick="excluirCofrinho('+id+')" style="background:rgba(239,71,111,.15);border:none;color:#ef476f;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:13px">🗑️</button>'
+    +'</div></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:16px">'
+    +'<button onclick="abrirCofMov('+id+',\'entrada\')" style="flex:1;background:rgba(6,214,160,.2);border:1px solid rgba(6,214,160,.4);color:#06d6a0;padding:10px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px">+ Entrada</button>'
+    +'<button onclick="abrirCofMov('+id+',\'saida\')" style="flex:1;background:rgba(239,71,111,.15);border:1px solid rgba(239,71,111,.35);color:#ef476f;padding:10px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px">- Saída</button>'
+    +'</div>';
+  if(movs.length){
+    h+='<div style="font-size:12px;font-weight:600;color:#7b80a0;margin-bottom:8px;border-top:1px solid #2a2f4a;padding-top:12px">Histórico</div>';
+    movs.forEach(function(m){
+      var dp=m.data.split('-');var d=dp[2]+'/'+dp[1]+'/'+dp[0].slice(2);
+      var isPos=m.val>=0;
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2f4a">'
+        +'<div style="flex:1"><div style="font-size:13px;color:#e8eaf6">'+escHtml(m.desc)+'</div>'
+        +'<div style="font-size:11px;color:#7b80a0">'+d+'</div></div>'
+        +'<div style="font-size:13px;font-weight:700;color:'+(isPos?'#06d6a0':'#ef476f')+'">'+(isPos?'+':'-')+fmt(m.val)+'</div>'
+        +'<button onclick="excluirCofMov('+m.id+')" style="background:none;border:none;color:#7b80a0;font-size:14px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>'
+        +'</div>';
+    });
+  }else{
+    h+='<div style="font-size:12px;color:#7b80a0;text-align:center;padding:12px 0;border-top:1px solid #2a2f4a">Nenhuma movimentação ainda.</div>';
+  }
+  document.getElementById('cof-detalhe-content').innerHTML=h;
+}
+function abrirCofMov(cofId,tipo){
+  movCofId=cofId;movTipo=tipo;
+  document.getElementById('cof-mov-titulo').textContent=tipo==='entrada'?'+ Entrada':'- Saída';
+  document.getElementById('cof-mov-val').value='';
+  document.getElementById('cof-mov-desc').value='';
+  document.getElementById('cof-mov-data').value=new Date().toISOString().slice(0,10);
+  abrir('ov-cof-mov');
+}
+function confirmarCofMov(){
+  var val=parseFloat(document.getElementById('cof-mov-val').value.replace(',','.'));
+  var desc=document.getElementById('cof-mov-desc').value.trim();
+  var data=document.getElementById('cof-mov-data').value;
+  if(isNaN(val)||val<=0){toast('Informe um valor válido.');return;}
+  if(!desc){toast('Informe uma descrição.');return;}
+  if(!data){toast('Informe a data.');return;}
+  if(!db.cofrinhoMovs)db.cofrinhoMovs=[];
+  if(!db.nmid)db.nmid=1;
+  var v=movTipo==='saida'?-Math.abs(val):Math.abs(val);
+  db.cofrinhoMovs.push({id:db.nmid++,cofId:movCofId,val:Math.round(v*100)/100,desc:desc,data:data});
+  fechar('ov-cof-mov');salvar();renderCofDetalhe();renderCofrinhos();
+}
+function excluirCofMov(id){
+  db.cofrinhoMovs=(db.cofrinhoMovs||[]).filter(function(m){return m.id!==id;});
+  salvar();renderCofDetalhe();renderCofrinhos();
+}
+// ── FIM COFRINHOS ─────────────────────────────────────────
 var _resumoFamiliaText='';
 function abrirResumoFamilia(ccId){
   var fam=[];

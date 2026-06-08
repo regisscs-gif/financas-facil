@@ -437,7 +437,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v71';
+var APP_VERSION = 'v72';
 
 var currentUser = null;
 var accessToken = null;
@@ -1854,7 +1854,9 @@ function renderDash2(){
   if(db.cartoes.length){
     h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:10px">💳 Cartões — fatura atual</div>';
     db.cartoes.forEach(function(cc){
-      var gastos=gastosCC(cc.id,curM,curY).reduce(function(s,l){return s+l.val;},0);
+      var todos=gastosCC(cc.id,curM,curY);
+      var gastos=todos.filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);
+      var famTotal=todos.filter(function(l){return l.titular==='fam';}).reduce(function(s,l){return s+l.val;},0);
       var pct=cc.limite>0?Math.min(100,Math.round((gastos/cc.limite)*100)):0;
       var cor=pct>80?'#ef476f':pct>50?'#ffd166':'#06d6a0';
       h+='<div style="margin-bottom:12px">'
@@ -1864,7 +1866,9 @@ function renderDash2(){
         +'</div>'
         +'<div style="background:#22263a;border-radius:99px;height:8px;overflow:hidden">'
         +'<div style="width:'+pct+'%;background:'+cor+';height:100%;border-radius:99px"></div></div>'
-        +'<div style="font-size:10px;color:#7b80a0;margin-top:3px">'+pct+'% do limite · Vence dia '+cc.vence+'</div>'
+        +'<div style="font-size:10px;color:#7b80a0;margin-top:3px">'+pct+'% do limite · Vence dia '+cc.vence
+        +(famTotal>0?' · <span style="color:#ffd166">família: '+fmt(famTotal)+'</span>':'')
+        +'</div>'
         +'</div>';
     });
     h+='</div>';

@@ -433,7 +433,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v69';
+var APP_VERSION = 'v70';
 
 var currentUser = null;
 var accessToken = null;
@@ -828,7 +828,7 @@ document.querySelectorAll('.nb').forEach(function(b){
     document.querySelectorAll('.nb').forEach(function(x){x.classList.remove('on');});
     b.classList.add('on');
     fecharFabMenu();
-    document.getElementById('fab').style.display=(curPg==='dash'||curPg==='lanc'||curPg==='fix'||curPg==='cc')?'flex':'none';
+    document.getElementById('fab').style.display=(curPg==='lanc'||curPg==='fix'||curPg==='cc')?'flex':'none';
     if(curPg==='cc')voltarCartoes();
     if(curPg==='cfg'){renderCfg();renderLog();}
     render();

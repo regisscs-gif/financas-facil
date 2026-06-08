@@ -143,6 +143,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 vs 💰 Gastos por categoria</div><div id="proj-cccat"></div></div>
   </div>
 
+  <div class="page" id="pg-dash2"><div id="d2-content"></div></div>
+
   <div class="page" id="pg-lanc">
     <div id="l-list"></div>
   </div>
@@ -224,12 +226,14 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
   <button class="fab" id="fab">+</button>
   <nav class="nav">
-    <button class="nb on" data-pg="dash"><span>⊞</span>Dashboard</button>
-    <button class="nb" data-pg="lanc"><span>📋</span>Lançamentos</button>
+    <button class="nb on" data-pg="dash"><span>⊞</span>Dash</button>
+    <button class="nb" data-pg="dash2"><span>📊</span>Dash 2</button>
+    <button class="nb" data-pg="lanc"><span>📋</span>Lanç.</button>
     <button class="nb" data-pg="fix"><span>🔁</span>Fixos</button>
-    <button class="nb" data-pg="parc"><span>💳</span>Parcelas</button>
-    <button class="nb" data-pg="cc"><span>🃏</span>Cartões</button>
-  <button class="nb" data-pg="cfg"><span>⚙️</span>Config.</button>  </nav>
+    <button class="nb" data-pg="parc"><span>💳</span>Parc.</button>
+    <button class="nb" data-pg="cc"><span>🃏</span>CC</button>
+    <button class="nb" data-pg="cfg"><span>⚙️</span>Config.</button>
+  </nav>
 </div>
 
 <input type="file" id="cc-import-input" accept=".csv,.pdf" style="display:none">
@@ -433,7 +437,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v70';
+var APP_VERSION = 'v71';
 
 var currentUser = null;
 var accessToken = null;
@@ -829,6 +833,7 @@ document.querySelectorAll('.nb').forEach(function(b){
     b.classList.add('on');
     fecharFabMenu();
     document.getElementById('fab').style.display=(curPg==='lanc'||curPg==='fix'||curPg==='cc')?'flex':'none';
+    if(curPg==='dash2')renderDash2();
     if(curPg==='cc')voltarCartoes();
     if(curPg==='cfg'){renderCfg();renderLog();}
     render();
@@ -1809,13 +1814,141 @@ function itemFixoMesHTML(f,mk){
 
 function render(){
   document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
-  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
+  renderDash();renderDash2();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
 }
 function renderDash(){
   var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;
   document.getElementById('d-sal').textContent=fmt(s);document.getElementById('d-sal').style.color=s>=0?'#06d6a0':'#ef476f';
   document.getElementById('d-msg').textContent=s>=0?'Você está no positivo 🎉':'Atenção: despesas acima da receita';
   document.getElementById('d-rec').textContent=fmt(r);document.getElementById('d-exp').textContent=fmt(e);
+}
+function renderDash2(){
+  var el=document.getElementById('d2-content');if(!el)return;
+  var prevM=curM===0?11:curM-1,prevY=curM===0?curY-1:curY;
+  var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;
+  var rP=somaR(prevM,prevY),eP=somaE(prevM,prevY),sP=rP-eP;
+  function varTag(cur,prev,inv){
+    if(!prev)return'';
+    var pct=Math.round(((cur-prev)/Math.abs(prev))*100);
+    var good=inv?pct<0:pct>0;
+    return' <span style="font-size:10px;color:'+(good?'#06d6a0':'#ef476f')+'">'+(pct>0?'↑':'↓')+Math.abs(pct)+'%</span>';
+  }
+  var h='';
+
+  // ── 1. Cards topo com variação ──
+  h+='<div class="card">'
+    +'<div style="font-size:11px;color:#7b80a0;margin-bottom:3px">Saldo do Mês</div>'
+    +'<div style="font-size:26px;font-weight:800;color:'+(s>=0?'#06d6a0':'#ef476f')+'">'+fmt(s)+varTag(s,sP,false)+'</div>'
+    +'<div style="font-size:11px;color:#7b80a0;margin-top:4px">'+(s>=0?'Positivo 🎉':'Atenção: despesas acima da receita')+' · mês anterior: '+fmt(sP)+'</div>'
+    +'</div>';
+  h+='<div class="row2">'
+    +'<div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↑ Receitas</div>'
+    +'<div style="font-size:17px;font-weight:700;color:#06d6a0">'+fmt(r)+varTag(r,rP,false)+'</div>'
+    +'<div style="font-size:10px;color:#7b80a0;margin-top:2px">ant: '+fmt(rP)+'</div></div>'
+    +'<div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div>'
+    +'<div style="font-size:17px;font-weight:700;color:#ef476f">'+fmt(e)+varTag(e,eP,true)+'</div>'
+    +'<div style="font-size:10px;color:#7b80a0;margin-top:2px">ant: '+fmt(eP)+'</div></div>'
+    +'</div>';
+
+  // ── 5. Resumo de cartões ──
+  if(db.cartoes.length){
+    h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:10px">💳 Cartões — fatura atual</div>';
+    db.cartoes.forEach(function(cc){
+      var gastos=gastosCC(cc.id,curM,curY).reduce(function(s,l){return s+l.val;},0);
+      var pct=cc.limite>0?Math.min(100,Math.round((gastos/cc.limite)*100)):0;
+      var cor=pct>80?'#ef476f':pct>50?'#ffd166':'#06d6a0';
+      h+='<div style="margin-bottom:12px">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+        +'<span style="font-size:12px;font-weight:600">'+escHtml(cc.nome)+'</span>'
+        +'<span style="font-size:12px;color:'+cor+'">'+fmt(gastos)+'<span style="color:#7b80a0;font-weight:400"> / '+fmt(cc.limite)+'</span></span>'
+        +'</div>'
+        +'<div style="background:#22263a;border-radius:99px;height:8px;overflow:hidden">'
+        +'<div style="width:'+pct+'%;background:'+cor+';height:100%;border-radius:99px"></div></div>'
+        +'<div style="font-size:10px;color:#7b80a0;margin-top:3px">'+pct+'% do limite · Vence dia '+cc.vence+'</div>'
+        +'</div>';
+    });
+    h+='</div>';
+  }
+
+  // ── 4. Fluxo de caixa do mês ──
+  var td=hoje();
+  var byDate={};
+  lancsDoMes(curM,curY).filter(function(l){return l.data<=td;}).forEach(function(l){
+    var v=l.tipo==='r'?l.val:-l.val;byDate[l.data]=(byDate[l.data]||0)+v;
+  });
+  fixosVigentes(curM,curY).forEach(function(f){
+    if(!f.dia)return;
+    var d=curY+'-'+pad(curM+1)+'-'+pad(f.dia);
+    if(d>td)return;
+    byDate[d]=(byDate[d]||0)+(f.tipo==='r'?f.val:-f.val);
+  });
+  var dates=Object.keys(byDate).sort();
+  if(dates.length<2){
+    h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📈 Fluxo de caixa do mês</div>'
+      +'<div class="empty">Poucos dados para gerar o gráfico.</div></div>';
+  }else{
+    var cumul=0,points=[];
+    dates.forEach(function(d){cumul+=byDate[d];points.push({d:d,v:cumul});});
+    var minV=Math.min(0,points.reduce(function(m,p){return Math.min(m,p.v);},Infinity));
+    var maxV=Math.max(0,points.reduce(function(m,p){return Math.max(m,p.v);},-Infinity));
+    if(maxV===minV)maxV=minV+100;
+    var W=300,H=80,pL=6,pR=6,pT=8,pB=18,plotW=W-pL-pR,plotH=H-pT-pB;
+    var n=points.length;
+    var coords=points.map(function(p,i){
+      return{x:pL+(n===1?plotW/2:(i/(n-1))*plotW),y:pT+plotH-((p.v-minV)/(maxV-minV))*plotH,v:p.v,d:p.d};
+    });
+    var zeroY=pT+plotH-((0-minV)/(maxV-minV))*plotH;
+    var lineD='M '+coords.map(function(c){return c.x.toFixed(1)+','+c.y.toFixed(1);}).join(' L ');
+    var areaD=lineD+' L '+coords[n-1].x.toFixed(1)+','+(pT+plotH)+' L '+coords[0].x.toFixed(1)+','+(pT+plotH)+' Z';
+    var lastV=points[n-1].v,lp=coords[n-1];
+    var lc=lastV>=0?'#06d6a0':'#ef476f';
+    var idxs=[0,Math.floor((n-1)/2),n-1];
+    var xlabels=idxs.map(function(i){
+      return '<text x="'+coords[i].x.toFixed(1)+'" y="'+(H-3)+'" text-anchor="middle" font-size="9" fill="#7b80a0">'+points[i].d.split('-')[2]+'</text>';
+    }).join('');
+    var lx=lp.x>W-50?lp.x-4:lp.x+4,la=lp.x>W-50?'end':'start',ly=lp.y>12?lp.y-4:lp.y+12;
+    h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📈 Fluxo de caixa do mês</div>'
+      +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">'
+      +(minV<0&&maxV>0?'<line x1="'+pL+'" y1="'+zeroY.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+zeroY.toFixed(1)+'" stroke="#2a2f4a" stroke-width="1" stroke-dasharray="3,3"/>':'')
+      +'<path d="'+areaD+'" fill="'+lc+'" opacity="0.12"/>'
+      +'<path d="'+lineD+'" fill="none" stroke="'+lc+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+      +'<circle cx="'+lp.x.toFixed(1)+'" cy="'+lp.y.toFixed(1)+'" r="3" fill="'+lc+'"/>'
+      +'<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="9" fill="'+lc+'" text-anchor="'+la+'">'+fmt(lastV).replace('R$ ','R$')+'</text>'
+      +xlabels
+      +'</svg>'
+      +'<div style="font-size:10px;color:#7b80a0;margin-top:4px">Acumulado de lançamentos registrados no mês</div>'
+      +'</div>';
+  }
+
+  // ── 3. Próximos vencimentos ──
+  var todayDate=new Date(),todayDay=todayDate.getDate();
+  var upcoming=[];
+  fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e'&&f.dia;}).forEach(function(f){
+    var du=f.dia-todayDay;if(du>=0&&du<=30)upcoming.push({desc:f.desc,val:f.val,cat:f.cat,du:du,dia:f.dia,mes:MABR[curM]});
+  });
+  var nextM=(curM+1)%12,nextY=curM===11?curY+1:curY;
+  var diasNoMes=new Date(curY,curM+1,0).getDate();
+  fixosVigentes(nextM,nextY).filter(function(f){return f.tipo==='e'&&f.dia;}).forEach(function(f){
+    var du=(diasNoMes-todayDay)+f.dia;if(du<=30)upcoming.push({desc:f.desc,val:f.val,cat:f.cat,du:du,dia:f.dia,mes:MABR[nextM]});
+  });
+  upcoming.sort(function(a,b){return a.du-b.du;});upcoming=upcoming.slice(0,8);
+  h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:10px">⏰ Próximos vencimentos</div>';
+  if(!upcoming.length){
+    h+='<div class="empty">Nenhum fixo vencendo nos próximos 30 dias.</div>';
+  }else{
+    upcoming.forEach(function(f){
+      var cor=f.du===0?'#ef476f':f.du<=3?'#ffd166':'#7b80a0';
+      var label=f.du===0?'hoje':f.du===1?'amanhã':'em '+f.du+' dias';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2f4a">'
+        +'<div style="font-size:18px">'+emo(f.cat)+'</div>'
+        +'<div style="flex:1;min-width:0"><div style="font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</div>'
+        +'<div style="font-size:10px;color:'+cor+'">dia '+pad(f.dia)+' '+f.mes+' · '+label+'</div></div>'
+        +'<div style="font-size:13px;font-weight:700;color:#ef476f;flex-shrink:0">-'+fmt(f.val)+'</div>'
+        +'</div>';
+    });
+  }
+  h+='</div>';
+  el.innerHTML=h;
 }
 function renderLancs(){
   var mk=mesKey(curM,curY);var fixMes=fixosVigentes(curM,curY);

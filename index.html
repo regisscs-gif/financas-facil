@@ -437,7 +437,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v72';
+var APP_VERSION = 'v73';
 
 var currentUser = null;
 var accessToken = null;
@@ -1923,6 +1923,50 @@ function renderDash2(){
       +'<div style="font-size:10px;color:#7b80a0;margin-top:4px">Acumulado de lançamentos registrados no mês</div>'
       +'</div>';
   }
+
+  // ── 6. MoM por categoria ──
+  var catCur={},catPrev={};
+  lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e';}).forEach(function(l){var c=l.cat||'Outros';catCur[c]=(catCur[c]||0)+l.val;});
+  fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).forEach(function(f){var c=f.cat||'Outros';catCur[c]=(catCur[c]||0)+f.val;});
+  lancsDoMes(prevM,prevY).filter(function(l){return l.tipo==='e';}).forEach(function(l){var c=l.cat||'Outros';catPrev[c]=(catPrev[c]||0)+l.val;});
+  fixosVigentes(prevM,prevY).filter(function(f){return f.tipo==='e';}).forEach(function(f){var c=f.cat||'Outros';catPrev[c]=(catPrev[c]||0)+f.val;});
+  var allCats=Object.keys(Object.assign({},catCur,catPrev));
+  var catRows=allCats.map(function(c){
+    var cur=catCur[c]||0,prev=catPrev[c]||0,diff=cur-prev;
+    var pct=prev?Math.round((diff/Math.abs(prev))*100):null;
+    return{c:c,cur:cur,prev:prev,diff:diff,pct:pct};
+  }).filter(function(r){return r.cur>0||r.prev>0;});
+  catRows.sort(function(a,b){return Math.abs(b.diff)-Math.abs(a.diff);});
+  catRows=catRows.slice(0,10);
+  h+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 Despesas por categoria</div>';
+  if(!catRows.length){
+    h+='<div class="empty">Sem despesas registradas.</div>';
+  }else{
+    catRows.forEach(function(row,idx){
+      var tag='';
+      if(row.pct!==null){
+        var good=row.pct<0;
+        tag='<span style="font-size:10px;color:'+(good?'#06d6a0':'#ef476f')+'">'+(row.pct>0?'↑':'↓')+Math.abs(row.pct)+'%</span>';
+      }else if(row.prev===0){
+        tag='<span style="font-size:10px;color:#ffd166">novo</span>';
+      }else{
+        tag='<span style="font-size:10px;color:#ffd166">encerrado</span>';
+      }
+      var brd=idx<catRows.length-1?'border-bottom:1px solid #2a2f4a;':'';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;'+brd+'">'
+        +'<div style="font-size:18px">'+emo(row.c)+'</div>'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;color:#e8eaf6">'+escHtml(row.c)+'</div>'
+        +'<div style="font-size:10px;color:#7b80a0">ant: '+fmt(row.prev)+'</div>'
+        +'</div>'
+        +'<div style="text-align:right;flex-shrink:0">'
+        +'<div style="font-size:13px;font-weight:700;color:'+(row.cur>0?'#ef476f':'#7b80a0')+'">'+fmt(row.cur)+'</div>'
+        +'<div>'+tag+'</div>'
+        +'</div>'
+        +'</div>';
+    });
+  }
+  h+='</div>';
 
   // ── 3. Próximos vencimentos ──
   var todayDate=new Date(),todayDay=todayDate.getDate();

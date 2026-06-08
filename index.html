@@ -447,7 +447,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v65';
+var APP_VERSION = 'v66';
 
 var currentUser = null;
 var accessToken = null;
@@ -1123,8 +1123,13 @@ document.getElementById('csv-file-input').addEventListener('change',function(e){
 });
 function mostrarPreviewCSV(text){
   var lines=text.trim().split('\n');
-  var existingKeys={};
-  db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+  var existingKeys={},softKeys={};
+  db.ccLancs.forEach(function(l){
+    if(l.csvKey)existingKeys[l.csvKey]=true;
+    var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
+    if(!softKeys[k])softKeys[k]=[];
+    softKeys[k].push(l.desc);
+  });
   var pagamentos=0,duplicados=0;
   csvImportBuffer=[];
   lines.slice(1).forEach(function(line){
@@ -1139,37 +1144,52 @@ function mostrarPreviewCSV(text){
     var key=data+'|'+lancamento+'|'+valor;
     if(existingKeys[key]){duplicados++;return;}
     var dataAdj=ajustarDataParcela(lancamento,data);
-    csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key});
+    var softDupDescs=(softKeys[dataAdj+'|'+Math.round(valor*100)/100])||null;
+    csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key,include:!softDupDescs,softDupDescs:softDupDescs||null});
   });
+  csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
+  var softCount=csvImportBuffer.filter(function(r){return r.softDupDescs;}).length;
   var n=csvImportBuffer.length;
   document.getElementById('import-summary').innerHTML=
-    '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' para importar</b><br>'
+    '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b><br>'
     +'<span>'+duplicados+' já existente'+(duplicados!==1?'s':'')+' — ignorado'+(duplicados!==1?'s':'')+'</span><br>'
-    +'<span>'+pagamentos+' pagamento'+(pagamentos!==1?'s':'')+' — ignorado'+(pagamentos!==1?'s':'')+'</span>';
-  csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
+    +'<span>'+pagamentos+' pagamento'+(pagamentos!==1?'s':'')+' — ignorado'+(pagamentos!==1?'s':'')+'</span>'
+    +(softCount?'<div style="margin-top:6px;font-size:11px;color:#ffd166">⚠️ '+softCount+' possív'+(softCount!==1?'eis':'el')+' duplicata'+(softCount!==1?'s':'')+' — pré-desmarcado'+(softCount!==1?'s':'')+'</div>':'');
   document.getElementById('import-preview').innerHTML=n===0
     ?'<div class="empty">Nenhum lançamento novo encontrado.</div>'
-    :csvImportBuffer.map(function(r){
+    :csvImportBuffer.map(function(r,i){
       var lp=r.data.split('-');
-      return '<div class="it" style="cursor:default"><div class="iinfo">'
-        +'<div class="iname" style="font-size:13px">'+escHtml(r.lancamento)+'</div>'
-        +'<div class="isub">'+lp[2]+' '+MABR[+lp[1]-1]+' '+lp[0]+'</div>'
-        +'</div><div class="ival r">-'+fmt(r.valor)+'</div></div>';
+      var softNote=r.softDupDescs?'<span style="font-size:9px;color:#ffd166;margin-left:4px" title="Já lançado como: '+escHtml(r.softDupDescs.join(', '))+'">⚠️ dup?</span>':'';
+      var rowStyle=r.softDupDescs?'display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #2a2f4a;opacity:.6':'display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #2a2f4a';
+      return '<div style="'+rowStyle+'">'
+        +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="csvSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.lancamento)+softNote+'</div>'
+        +'<div style="font-size:10px;color:#7b80a0">'+lp[2]+' '+MABR[+lp[1]-1]+' '+lp[0]+'</div>'
+        +'</div>'
+        +'<div style="font-size:12px;font-weight:700;color:#ef476f;flex-shrink:0">-'+fmt(r.valor)+'</div>'
+        +'</div>';
     }).join('');
-  var btn=document.getElementById('import-confirm-btn');
-  btn.textContent=n>0?'Importar '+n+' lançamento'+(n!==1?'s':''):'Nenhum para importar';
-  btn.disabled=n===0;
+  atualizarBtnCSV();
   document.getElementById('ov-import-csv').classList.add('on');
 }
+function csvSetInclude(i,v){csvImportBuffer[i].include=v;atualizarBtnCSV();}
+function atualizarBtnCSV(){
+  var n=csvImportBuffer.filter(function(r){return r.include;}).length;
+  var btn=document.getElementById('import-confirm-btn');
+  btn.textContent=n>0?'Importar '+n+' lançamento'+(n!==1?'s':''):'Nenhum selecionado';
+  btn.disabled=n===0;
+}
 function confirmarImportCSV(){
-  if(!csvImportBuffer.length||!curCCId)return;
+  var itens=csvImportBuffer.filter(function(r){return r.include;});
+  if(!itens.length||!curCCId)return;
   var catPad=(db.catsE&&db.catsE.length)?db.catsE[0]:'Outros';
-  csvImportBuffer.forEach(function(r){
+  itens.forEach(function(r){
     db.ccLancs.push({id:db.nid++,ccId:curCCId,desc:r.lancamento,val:r.valor,data:r.data,cat:catPad,titular:'eu',csvKey:r.csvKey});
   });
-  log('csv_import',{ccId:curCCId,count:csvImportBuffer.length});
+  log('csv_import',{ccId:curCCId,count:itens.length});
   syncFaturas();fechar('ov-import-csv');salvar();
-  toast('✓ '+csvImportBuffer.length+' lançamento'+(csvImportBuffer.length!==1?'s':'')+' importado'+(csvImportBuffer.length!==1?'s':'')+'!');
+  toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
   csvImportBuffer=[];render();
 }
 

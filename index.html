@@ -447,7 +447,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v63';
+var APP_VERSION = 'v64';
 
 var currentUser = null;
 var accessToken = null;
@@ -1270,7 +1270,7 @@ function detectarBancoExtrato(rows){
   }
   return'itau';
 }
-function parsearLinhasItau(rows,existingKeys){
+function parsearLinhasItau(rows,existingKeys,softKeys){
   var items=[],dupCount=0;
   rows.forEach(function(cols){
     if(!cols||cols.length<4)return;
@@ -1288,11 +1288,12 @@ function parsearLinhasItau(rows,existingKeys){
     var csvKey=data+'|'+desc+'|'+valAbs;
     if(existingKeys[csvKey]){dupCount++;return;}
     var isFatura=/FATURA PAGA/i.test(desc);
-    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
+    var softDupDescs=(!isFatura&&softKeys&&softKeys[data+'|'+valAbs])||null;
+    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura&&!softDupDescs,isFatura:isFatura,softDupDescs:softDupDescs||null});
   });
   return{items:items,dupCount:dupCount};
 }
-function parsearLinhasSantander(rows,existingKeys){
+function parsearLinhasSantander(rows,existingKeys,softKeys){
   var items=[],dupCount=0;
   for(var i=6;i<rows.length;i++){
     var cols=rows[i];if(!cols||cols.length<6)continue;
@@ -1314,15 +1315,21 @@ function parsearLinhasSantander(rows,existingKeys){
     var csvKey=data+'|'+desc+'|'+valAbs;
     if(existingKeys[csvKey]){dupCount++;continue;}
     var isFatura=/FATURA PAGA/i.test(desc);
-    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura,isFatura:isFatura});
+    var softDupDescs=(!isFatura&&softKeys&&softKeys[data+'|'+valAbs])||null;
+    items.push({data:data,desc:desc,cat:autoCatExtrato(desc,tipo),val:valAbs,tipo:tipo,csvKey:csvKey,include:!isFatura&&!softDupDescs,isFatura:isFatura,softDupDescs:softDupDescs||null});
   }
   return{items:items,dupCount:dupCount};
 }
 function parsearLinhasExtrato(rows){
-  var existingKeys={};
-  db.lancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+  var existingKeys={},softKeys={};
+  db.lancs.forEach(function(l){
+    if(l.csvKey)existingKeys[l.csvKey]=true;
+    var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
+    if(!softKeys[k])softKeys[k]=[];
+    softKeys[k].push(l.desc);
+  });
   var banco=detectarBancoExtrato(rows);
-  var res=banco==='santander'?parsearLinhasSantander(rows,existingKeys):parsearLinhasItau(rows,existingKeys);
+  var res=banco==='santander'?parsearLinhasSantander(rows,existingKeys,softKeys):parsearLinhasItau(rows,existingKeys,softKeys);
   extratoImportBuffer=res.items;
   extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});
   mostrarPreviewExtrato(res.dupCount);
@@ -1386,9 +1393,11 @@ function mostrarPreviewExtrato(dupCount){
       +'<button id="ext-tit-all-eu" onclick="extratoSetTitularAll(\'eu\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(239,71,111,.3);color:#ef476f">EU</button>'
       +'<button id="ext-tit-all-fam" onclick="extratoSetTitularAll(\'fam\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(100,100,100,.2);color:#7b80a0">FAM</button>'
       +'</div>':'';
+  var softCount=extratoImportBuffer.filter(function(r){return r.softDupDescs;}).length;
   document.getElementById('ext-summary').innerHTML=
     '<b style="color:#06d6a0">'+n+' novo'+(n!==1?'s':'')+' encontrado'+(n!==1?'s':'')+'</b>'
     +'<span style="margin-left:10px">'+dupCount+' já importado'+(dupCount!==1?'s':'')+' — ignorado'+(dupCount!==1?'s':'')+'</span>'
+    +(softCount?'<div style="margin-top:6px;font-size:11px;color:#ffd166">⚠️ '+softCount+' possív'+(softCount!==1?'eis':'el')+' duplicata'+(softCount!==1?'s':'')+' — verifique abaixo (pré-desmarcado'+(softCount!==1?'s':'')+')</div>':'')
     +titGlobal;
 
   // Seção de fixos para suprimir (só no modo extrato)
@@ -1418,14 +1427,16 @@ function mostrarPreviewExtrato(dupCount){
       var cor=r.tipo==='r'?'#06d6a0':'#ef476f';
       var sinal=r.tipo==='r'?'+':'-';
       var faturaNote=r.isFatura?'<span style="font-size:9px;color:#a5b4fc;margin-left:4px">já no cartão</span>':'';
+      var softNote=r.softDupDescs?'<span style="font-size:9px;color:#ffd166;flex-shrink:0" title="Já lançado como: '+escHtml(r.softDupDescs.join(', '))+'">⚠️ dup?</span>':'';
       var parcTag=r.isParcela?'<span style="font-size:9px;background:rgba(108,99,255,.2);color:#a78bfa;border-radius:3px;padding:1px 4px;flex-shrink:0">'+r.pn+'/'+r.pt+'</span>':'';
       var futTag=(r.isParcela&&r.futureDates.length)?'<span style="font-size:9px;color:#7b80a0;flex-shrink:0">+'+r.futureDates.filter(function(f){return!f.dup;}).length+'↗</span>':'';
       var cats=r.tipo==='r'?db.catsR:db.catsE;
       var catOpts=cats.map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
-      return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a">'
+      var rowStyle=r.softDupDescs?'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a;opacity:.6':'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a';
+      return '<div style="'+rowStyle+'">'
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="extratoSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
-        +faturaNote+parcTag
+        +faturaNote+softNote+parcTag
         +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var exp=s.whiteSpace===\'normal\';s.whiteSpace=exp?\'nowrap\':\'normal\';s.overflow=exp?\'hidden\':\'visible\'">'+escHtml(r.desc)+'</span>'
         +futTag
         +'<select onchange="extratoSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'

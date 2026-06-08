@@ -214,7 +214,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 
   <div id="fab-menu" style="display:none;position:fixed;bottom:128px;right:calc(50% - 215px + 14px);z-index:39;flex-direction:column;gap:10px;align-items:flex-end">
     <div style="display:flex;align-items:center;gap:8px">
-      <span style="background:#1a1d27;border:1px solid #2a2f4a;color:#e8eaf6;padding:5px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.6)">📂 Importar extrato</span>
+      <span style="background:#1a1d27;border:1px solid #2a2f4a;color:#e8eaf6;padding:5px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.6)">📥 Importar</span>
       <button onclick="fecharFabMenu();abrirImportSelector()" style="width:42px;height:42px;border-radius:50%;background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center">📂</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -332,21 +332,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 
 <div class="ov" id="ov-import-select">
   <div class="mod">
-    <h3>Importar lançamentos</h3>
-    <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Conta corrente</div>
-      <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Extrato em XLS ou CSV (Itaú e outros)</div>
-      <label for="extrato-file-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportExtrato()">Selecionar arquivo</label>
-    </div>
-    <div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:4px">💳 Cartão de crédito</div>
-      <div style="font-size:12px;color:#7b80a0;margin-bottom:6px">Fatura em CSV</div>
-      <div id="imp-cc-sel"></div>
-      <div style="border-top:1px solid #2a2f4a;margin-top:10px;padding-top:10px">
-        <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Fatura em PDF — Santander e Itaú</div>
-        <label for="cc-pdf-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportPDFFatura()">📄 Selecionar PDF da fatura</label>
-      </div>
-    </div>
+    <h3>Importar</h3>
+    <div id="import-sel-content"></div>
     <button class="cbtn" onclick="fechar('ov-import-select')">Cancelar</button>
   </div>
 </div>
@@ -447,7 +434,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v67';
+var APP_VERSION = 'v68';
 
 var currentUser = null;
 var accessToken = null;
@@ -1241,16 +1228,44 @@ function autoCatExtrato(desc,tipo){
   if(/IOF|MINISTERIO DA FAZENDA|DARF|RECEITA FEDERAL/.test(d))return(db.catsE&&db.catsE.indexOf('Impostos')>=0)?'Impostos':'Outros';
   return(db.catsE&&db.catsE.length)?db.catsE[db.catsE.length-1]:'Outros';
 }
+var importCardMode={};
 function abrirImportSelector(){
-  var ccEl=document.getElementById('imp-cc-sel');
+  var h='<div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">'
+    +'<div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Conta corrente</div>'
+    +'<div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Extrato XLS ou CSV — Itaú, Santander e outros</div>'
+    +'<label for="extrato-file-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportExtrato()">Selecionar arquivo</label>'
+    +'</div>';
   if(!db.cartoes.length){
-    ccEl.innerHTML='<div style="font-size:12px;color:#7b80a0">Nenhum cartão cadastrado.</div>';
+    h+='<div style="font-size:12px;color:#7b80a0;padding:4px 0 10px">Nenhum cartão cadastrado.</div>';
   }else{
-    ccEl.innerHTML=db.cartoes.map(function(cc){
-      return '<label for="csv-file-input" class="sbtn" style="margin-top:0;margin-bottom:6px;display:block;text-align:center;cursor:pointer" data-ccid="'+cc.id+'" onclick="prepImportCC(this)">'+escHtml(cc.nome)+'</label>';
-    }).join('');
+    db.cartoes.forEach(function(cc){
+      if(!importCardMode[cc.id])importCardMode[cc.id]='pdf';
+      var isPDF=importCardMode[cc.id]==='pdf';
+      h+='<div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">'
+        +'<div style="font-size:13px;font-weight:700;margin-bottom:8px">💳 '+escHtml(cc.nome)+'</div>'
+        +'<div style="display:flex;gap:6px;margin-bottom:10px">'
+        +'<button onclick="setImportCardMode('+cc.id+',\'csv\')" style="flex:1;padding:7px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:700;background:'+(!isPDF?'rgba(165,180,252,.3)':'#2a2f4a')+';color:'+(!isPDF?'#a5b4fc':'#7b80a0')+'">CSV parcial</button>'
+        +'<button onclick="setImportCardMode('+cc.id+',\'pdf\')" style="flex:1;padding:7px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:700;background:'+(isPDF?'rgba(165,180,252,.3)':'#2a2f4a')+';color:'+(isPDF?'#a5b4fc':'#7b80a0')+'">PDF fatura</button>'
+        +'</div>'
+        +'<div style="font-size:11px;color:#7b80a0;margin-bottom:8px">'+(isPDF?'Fatura fechada — Itaú e Santander (detectado automaticamente)':'Lançamentos parciais em CSV')+'</div>'
+        +'<button onclick="selecionarArquivoCartao('+cc.id+')" class="sbtn" style="margin-top:0;width:100%">'+(isPDF?'📄 Selecionar PDF':'Selecionar CSV')+'</button>'
+        +'</div>';
+    });
   }
+  document.getElementById('import-sel-content').innerHTML=h;
   document.getElementById('ov-import-select').classList.add('on');
+}
+function setImportCardMode(ccId,mode){importCardMode[ccId]=mode;abrirImportSelector();}
+function selecionarArquivoCartao(ccId){
+  curCCId=ccId;
+  var mode=importCardMode[ccId]||'pdf';
+  if(mode==='csv'){
+    document.getElementById('csv-file-input').value='';
+    document.getElementById('csv-file-input').click();
+  }else{
+    document.getElementById('cc-pdf-input').value='';
+    document.getElementById('cc-pdf-input').click();
+  }
 }
 function prepImportCC(el){curCCId=+el.dataset.ccid;document.getElementById('csv-file-input').value='';}
 function prepImportExtrato(){document.getElementById('extrato-file-input').value='';}
@@ -1555,7 +1570,7 @@ document.getElementById('cc-pdf-input').addEventListener('change',function(e){
   pdfFaturaFile=file;
   var sel=document.getElementById('pdf-card-sel');
   sel.innerHTML=db.cartoes.length
-    ?db.cartoes.map(function(cc){return'<option value="'+cc.id+'">'+escHtml(cc.nome)+'</option>';}).join('')
+    ?db.cartoes.map(function(cc){return'<option value="'+cc.id+'"'+(cc.id===curCCId?' selected':'')+'>'+escHtml(cc.nome)+'</option>';}).join('')
     :'<option value="">Nenhum cartão cadastrado</option>';
   document.getElementById('pdf-pass-inp').value='';
   document.getElementById('ov-pdf-pass').classList.add('on');

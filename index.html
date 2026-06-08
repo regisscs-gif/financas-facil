@@ -447,7 +447,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v64';
+var APP_VERSION = 'v65';
 
 var currentUser = null;
 var accessToken = null;
@@ -1379,7 +1379,8 @@ function mostrarPreviewExtrato(dupCount){
     Object.keys(mksNoImport).sort().forEach(function(mk){
       var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
       fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
-        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:false});
+        var jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.deleted;});
+        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:jaSuprimido});
       });
     });
   }

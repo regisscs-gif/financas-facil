@@ -133,9 +133,10 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:11px;color:#7b80a0;margin-top:5px" id="d-msg"></div>
     </div>
     <div class="row2">
-      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↑ Receitas</div><div style="font-size:17px;font-weight:700;color:#06d6a0" id="d-rec">R$ 0,00</div></div>
-      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div><div style="font-size:17px;font-weight:700;color:#ef476f" id="d-exp">R$ 0,00</div></div>
+      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↑ Receitas</div><div style="font-size:17px;font-weight:700;color:#06d6a0" id="d-rec">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-rec-ant"></div></div>
+      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div><div style="font-size:17px;font-weight:700;color:#ef476f" id="d-exp">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-exp-ant"></div></div>
     </div>
+    <div id="d-cc-card"></div>
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
     <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
@@ -437,7 +438,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v73';
+var APP_VERSION = 'v74';
 
 var currentUser = null;
 var accessToken = null;
@@ -1816,23 +1817,52 @@ function render(){
   document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
   renderDash();renderDash2();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
 }
+function varTag(cur,prev,inv){
+  if(!prev)return'';
+  var pct=Math.round(((cur-prev)/Math.abs(prev))*100);
+  var good=inv?pct<0:pct>0;
+  return' <span style="font-size:10px;color:'+(good?'#06d6a0':'#ef476f')+'">'+(pct>0?'↑':'↓')+Math.abs(pct)+'%</span>';
+}
 function renderDash(){
+  var prevM=curM===0?11:curM-1,prevY=curM===0?curY-1:curY;
   var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;
-  document.getElementById('d-sal').textContent=fmt(s);document.getElementById('d-sal').style.color=s>=0?'#06d6a0':'#ef476f';
-  document.getElementById('d-msg').textContent=s>=0?'Você está no positivo 🎉':'Atenção: despesas acima da receita';
-  document.getElementById('d-rec').textContent=fmt(r);document.getElementById('d-exp').textContent=fmt(e);
+  var rP=somaR(prevM,prevY),eP=somaE(prevM,prevY),sP=rP-eP;
+  var dSal=document.getElementById('d-sal');
+  dSal.innerHTML=fmt(s)+varTag(s,sP,false);dSal.style.color=s>=0?'#06d6a0':'#ef476f';
+  document.getElementById('d-msg').textContent=(s>=0?'Você está no positivo 🎉':'Atenção: despesas acima da receita')+' · mês anterior: '+fmt(sP);
+  document.getElementById('d-rec').innerHTML=fmt(r)+varTag(r,rP,false);
+  document.getElementById('d-exp').innerHTML=fmt(e)+varTag(e,eP,true);
+  document.getElementById('d-rec-ant').textContent='ant: '+fmt(rP);
+  document.getElementById('d-exp-ant').textContent='ant: '+fmt(eP);
+  var ccH='';
+  if(db.cartoes.length){
+    ccH='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:10px">💳 Cartões — fatura atual</div>';
+    db.cartoes.forEach(function(cc){
+      var todos=gastosCC(cc.id,curM,curY);
+      var gastos=todos.filter(function(l){return l.titular==='eu';}).reduce(function(s,l){return s+l.val;},0);
+      var famTotal=todos.filter(function(l){return l.titular==='fam';}).reduce(function(s,l){return s+l.val;},0);
+      var pct=cc.limite>0?Math.min(100,Math.round((gastos/cc.limite)*100)):0;
+      var cor=pct>80?'#ef476f':pct>50?'#ffd166':'#06d6a0';
+      ccH+='<div style="margin-bottom:12px">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+        +'<span style="font-size:12px;font-weight:600">'+escHtml(cc.nome)+'</span>'
+        +'<span style="font-size:12px;color:'+cor+'">'+fmt(gastos)+'<span style="color:#7b80a0;font-weight:400"> / '+fmt(cc.limite)+'</span></span>'
+        +'</div>'
+        +'<div style="background:#22263a;border-radius:99px;height:8px;overflow:hidden">'
+        +'<div style="width:'+pct+'%;background:'+cor+';height:100%;border-radius:99px"></div></div>'
+        +'<div style="font-size:10px;color:#7b80a0;margin-top:3px">'+pct+'% do limite · Vence dia '+cc.vence
+        +(famTotal>0?' · <span style="color:#ffd166">família: '+fmt(famTotal)+'</span>':'')
+        +'</div></div>';
+    });
+    ccH+='</div>';
+  }
+  document.getElementById('d-cc-card').innerHTML=ccH;
 }
 function renderDash2(){
   var el=document.getElementById('d2-content');if(!el)return;
   var prevM=curM===0?11:curM-1,prevY=curM===0?curY-1:curY;
   var r=somaR(curM,curY),e=somaE(curM,curY),s=r-e;
   var rP=somaR(prevM,prevY),eP=somaE(prevM,prevY),sP=rP-eP;
-  function varTag(cur,prev,inv){
-    if(!prev)return'';
-    var pct=Math.round(((cur-prev)/Math.abs(prev))*100);
-    var good=inv?pct<0:pct>0;
-    return' <span style="font-size:10px;color:'+(good?'#06d6a0':'#ef476f')+'">'+(pct>0?'↑':'↓')+Math.abs(pct)+'%</span>';
-  }
   var h='';
 
   // ── 1. Cards topo com variação ──
@@ -2316,10 +2346,14 @@ function renderProj(){
   document.getElementById('proj-re').innerHTML=h1;
 
   // ── 2. Donut por categoria ──
-  var catMap={};
+  var pM=curM===0?11:curM-1,pY=curM===0?curY-1:curY;
+  var catMap={},catMapP={};
   lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub!=='fat';}).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});
   fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).forEach(function(f){catMap[f.cat]=(catMap[f.cat]||0)+f.val;});
   db.cartoes.forEach(function(cc){gastosCC(cc.id,curM,curY).forEach(function(l){catMap[l.cat]=(catMap[l.cat]||0)+l.val;});});
+  lancsDoMes(pM,pY).filter(function(l){return l.tipo==='e'&&l.sub!=='fat';}).forEach(function(l){catMapP[l.cat]=(catMapP[l.cat]||0)+l.val;});
+  fixosVigentes(pM,pY).filter(function(f){return f.tipo==='e';}).forEach(function(f){catMapP[f.cat]=(catMapP[f.cat]||0)+f.val;});
+  db.cartoes.forEach(function(cc){gastosCC(cc.id,pM,pY).forEach(function(l){catMapP[l.cat]=(catMapP[l.cat]||0)+l.val;});});
   var cats=Object.keys(catMap).map(function(k){return{cat:k,val:catMap[k]};}).sort(function(a,b){return b.val-a.val;});
   var totE=cats.reduce(function(s,e){return s+e.val;},0);
   var h3;
@@ -2336,7 +2370,7 @@ function renderProj(){
       h3+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">'
         +'<div style="width:10px;height:10px;border-radius:2px;flex-shrink:0;background:'+CORES[i%CORES.length]+'"></div>'
         +'<div style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+emo(e.cat)+' '+e.cat+'</div>'
-        +'<div style="font-size:11px;color:#7b80a0;flex-shrink:0">'+Math.round((e.val/totE)*100)+'% <span style="color:#e8eaf6">('+fmt(e.val)+')</span></div>'
+        +'<div style="font-size:11px;color:#7b80a0;flex-shrink:0">'+Math.round((e.val/totE)*100)+'% <span style="color:#e8eaf6">('+fmt(e.val)+')</span>'+varTag(e.val,catMapP[e.cat]||0,true)+'</div>'
         +'</div>';
     });
   }

@@ -85,6 +85,26 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 .fat-header{background:#22263a;border-radius:12px;padding:12px 14px;margin-bottom:8px}
 .saving-dot{width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block;margin-left:6px;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* ── DESKTOP ──────────────────────────────────────────────── */
+@media(min-width:768px){
+  body{max-width:100%;padding-bottom:0}
+  #login-screen{max-width:430px;margin:0 auto}
+  #app-screen{margin-left:200px}
+  .hdr{position:sticky;top:0;background:#0f1117;z-index:30;border-bottom:1px solid #2a2f4a}
+  .nav{left:0;top:0;bottom:0;transform:none;width:200px;max-width:200px;flex-direction:column;justify-content:flex-start;border-top:none;border-right:1px solid #2a2f4a;padding:14px 10px 20px;gap:2px;overflow-y:auto}
+  .nav::before{content:'💸 FinançasFácil';display:block;font-size:15px;font-weight:800;color:#818cf8;padding:6px 10px 20px;white-space:nowrap}
+  .nb{flex-direction:row;justify-content:flex-start;padding:10px 14px;font-size:13px;border-radius:10px;gap:10px;width:100%;height:auto}
+  .nb span{font-size:18px}
+  .nb.on{background:rgba(129,140,248,.15)}
+  .page{padding:16px 24px}
+  #pg-dash{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;align-items:start}
+  #pg-dash>*:nth-child(1),#pg-dash>*:nth-child(2),#pg-dash>*:nth-child(3){grid-column:1}
+  #pg-dash>*:nth-child(n+4){grid-column:2}
+  .ov{align-items:center}
+  .mod{border-radius:16px;max-width:520px;max-height:85vh}
+  .fab{right:24px;left:auto;bottom:24px}
+  #fab-menu{right:24px;left:auto;bottom:86px}
+}
 </style>
 </head>
 <body>
@@ -436,7 +456,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v76';
+var APP_VERSION = 'v77';
 
 var currentUser = null;
 var accessToken = null;

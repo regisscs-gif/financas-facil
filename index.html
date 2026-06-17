@@ -97,9 +97,9 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   .nb span{font-size:18px}
   .nb.on{background:rgba(129,140,248,.15)}
   .page{padding:16px 24px}
-  #pg-dash{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;align-items:start}
-  #pg-dash>*:nth-child(1),#pg-dash>*:nth-child(2),#pg-dash>*:nth-child(3){grid-column:1}
-  #pg-dash>*:nth-child(n+4){grid-column:2}
+  #pg-dash.on{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;align-items:start}
+  #pg-dash.on>*:nth-child(1),#pg-dash.on>*:nth-child(2),#pg-dash.on>*:nth-child(3){grid-column:1}
+  #pg-dash.on>*:nth-child(n+4){grid-column:2}
   .ov{align-items:center}
   .mod{border-radius:16px;max-width:520px;max-height:85vh}
   .fab{right:24px;left:auto;bottom:24px}
@@ -456,7 +456,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v77';
+var APP_VERSION = 'v78';
 
 var currentUser = null;
 var accessToken = null;
@@ -855,6 +855,7 @@ document.querySelectorAll('.nb').forEach(function(b){
     if(curPg==='cc')voltarCartoes();
     if(curPg==='cfg'){renderCfg();renderLog();}
     render();
+    window.scrollTo(0,0);
   });
 });
 document.getElementById('mprev').onclick=function(){ prevCiclo(); };

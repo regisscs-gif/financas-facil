@@ -97,9 +97,10 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   .nb span{font-size:18px}
   .nb.on{background:rgba(129,140,248,.15)}
   .page{padding:16px 24px}
-  #pg-dash.on{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;align-items:start}
-  #pg-dash.on>*:nth-child(1),#pg-dash.on>*:nth-child(2),#pg-dash.on>*:nth-child(3){grid-column:1}
-  #pg-dash.on>*:nth-child(n+4){grid-column:2}
+  .logo{display:none}
+  #pg-dash.on{display:flex;gap:16px;align-items:flex-start}
+  #dash-col1{flex:0 0 38%;min-width:0}
+  #dash-col2{flex:1;min-width:0}
   .ov{align-items:center}
   .mod{border-radius:16px;max-width:520px;max-height:85vh}
   .fab{right:24px;left:auto;bottom:24px}
@@ -147,21 +148,25 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 
   <!-- DASHBOARD -->
   <div class="page on" id="pg-dash">
-    <div class="card">
-      <div style="font-size:11px;color:#7b80a0;margin-bottom:3px">Saldo do Mês</div>
-      <div style="font-size:26px;font-weight:800" id="d-sal">R$ 0,00</div>
-      <div style="font-size:11px;color:#7b80a0;margin-top:5px" id="d-msg"></div>
+    <div id="dash-col1">
+      <div class="card">
+        <div style="font-size:11px;color:#7b80a0;margin-bottom:3px">Saldo do Mês</div>
+        <div style="font-size:26px;font-weight:800" id="d-sal">R$ 0,00</div>
+        <div style="font-size:11px;color:#7b80a0;margin-top:5px" id="d-msg"></div>
+      </div>
+      <div class="row2">
+        <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↑ Receitas</div><div style="font-size:17px;font-weight:700;color:#34d399" id="d-rec">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-rec-ant"></div></div>
+        <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div><div style="font-size:17px;font-weight:700;color:#f87171" id="d-exp">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-exp-ant"></div></div>
+      </div>
+      <div id="d-cc-card"></div>
     </div>
-    <div class="row2">
-      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↑ Receitas</div><div style="font-size:17px;font-weight:700;color:#34d399" id="d-rec">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-rec-ant"></div></div>
-      <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div><div style="font-size:17px;font-weight:700;color:#f87171" id="d-exp">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-exp-ant"></div></div>
+    <div id="dash-col2">
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 10 despesas — mês atual</div><div id="proj-top5"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 vs 💰 Gastos por categoria</div><div id="proj-cccat"></div></div>
     </div>
-    <div id="d-cc-card"></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 10 despesas — mês atual</div><div id="proj-top5"></div></div>
-    <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 vs 💰 Gastos por categoria</div><div id="proj-cccat"></div></div>
   </div>
 
 
@@ -456,7 +461,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v78';
+var APP_VERSION = 'v79';
 
 var currentUser = null;
 var accessToken = null;

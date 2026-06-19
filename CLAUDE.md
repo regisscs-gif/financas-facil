@@ -95,9 +95,11 @@ Saldo is always computed: `cofSaldo(cofId)` sums `cofrinhoMovs` for that jar —
 At ≥768px, CSS overrides in `@media(min-width:768px)` apply:
 - `.nav` becomes a left sidebar (200px).
 - `#app-screen` gets `margin-left:200px`.
-- `#pg-dash.on` uses `display:flex` with `#dash-col1` (38%, summary cards) and `#dash-col2` (62%, charts in a 2-col sub-grid, first chart full-width).
+- `#pg-dash.on` uses `display:flex` with `#dash-col1` (38%) and `#dash-col2` (62%, `flex-direction:column`).
+- `#dash-col1` always holds 3 fixed summary elements (saldo card, `.row2`, `#d-cc-card`). Chart cards are dynamically moved here by `balanceDash()`.
+- All chart cards start in `#dash-col2` (HTML source order). `balanceDash()` redistributes them after each render using a greedy height-balancing algorithm — always appending the next chart to whichever column is currently shorter. Runs via `requestAnimationFrame` after layout. Re-runs on window resize (debounced 150ms).
 - All other pages use full content width.
-- Mobile layout is completely unaffected.
+- Mobile layout is completely unaffected (`balanceDash()` is a no-op when `window.innerWidth < 768`).
 
 ### Security
 

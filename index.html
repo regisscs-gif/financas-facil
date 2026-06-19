@@ -99,7 +99,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   .page{padding:16px 24px}
   .logo{display:none}
   #pg-dash.on{display:flex;gap:16px;align-items:flex-start}
-  #dash-col1{flex:0 0 38%;min-width:0}
+  #dash-col1{flex:0 0 38%;min-width:0;position:sticky;top:60px;align-self:flex-start}
   #dash-col2{flex:1;min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   #dash-col2>:first-child{grid-column:1/-1}
   .ov{align-items:center}
@@ -462,7 +462,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v80';
+var APP_VERSION = 'v81';
 
 var currentUser = null;
 var accessToken = null;

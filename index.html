@@ -160,11 +160,11 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
         <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:#7b80a0;margin-bottom:3px">↓ Despesas</div><div style="font-size:17px;font-weight:700;color:#f87171" id="d-exp">R$ 0,00</div><div style="font-size:10px;color:#7b80a0;margin-top:2px" id="d-exp-ant"></div></div>
       </div>
       <div id="d-cc-card"></div>
-      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
-      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
     </div>
     <div id="dash-col2">
       <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Receita vs Despesa — próx. 6 meses</div><div id="proj-re"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍩 Despesas por categoria — mês atual</div><div id="proj-donut"></div></div>
+      <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 Comprometimento da renda</div><div id="proj-comp"></div></div>
       <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🔝 Top 10 despesas — mês atual</div><div id="proj-top5"></div></div>
       <div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💳 vs 💰 Gastos por categoria</div><div id="proj-cccat"></div></div>
     </div>
@@ -462,7 +462,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v83';
+var APP_VERSION = 'v84';
 
 var currentUser = null;
 var accessToken = null;
@@ -1840,6 +1840,7 @@ function itemFixoMesHTML(f,mk){
 function render(){
   document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
   renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
+  balanceDash();
 }
 function varTag(cur,prev,inv){
   if(!prev)return'';
@@ -2315,6 +2316,35 @@ function renderCats(){
 function addCat(t){var inp=document.getElementById(t==='r'?'ncr':'nce');var v=inp.value.trim();if(!v)return;var arr=t==='r'?db.catsR:db.catsE;if(arr.indexOf(v)>=0){toast('Já existe');return;}arr.push(v);log('cat_add',{tipo:t,cat:v});inp.value='';salvar();renderCats();}
 function delCat(t,i){var cat=t==='r'?db.catsR[i]:db.catsE[i];if(t==='r')db.catsR.splice(i,1);else db.catsE.splice(i,1);log('cat_del',{tipo:t,cat:cat});salvar();renderCats();}
 
+// ── BALANCE DASH ─────────────────────────────────────────
+function balanceDash(){
+  if(window.innerWidth<768)return;
+  var col1=document.getElementById('dash-col1');
+  var col2=document.getElementById('dash-col2');
+  if(!col1||!col2)return;
+  var SUMMARY=3; // saldo card, row2, d-cc-card
+  // Reúne todos os cards de gráficos (onde quer que estejam)
+  var charts=[].slice.call(col1.children,SUMMARY).concat([].slice.call(col2.children));
+  // Reseta: tudo em col2 para medir
+  while(col1.children.length>SUMMARY)col1.removeChild(col1.lastElementChild);
+  col2.innerHTML='';
+  charts.forEach(function(c){col2.appendChild(c);});
+  // Aguarda layout e redistribui
+  requestAnimationFrame(function(){
+    var heights=charts.map(function(c){return c.offsetHeight;});
+    var GAP=10;
+    var h1=col1.offsetHeight,h2=0;
+    var toC1=[],toC2=[];
+    charts.forEach(function(c,i){
+      if(h1<=h2){toC1.push(c);h1+=heights[i]+GAP;}
+      else{toC2.push(c);h2+=heights[i]+GAP;}
+    });
+    col2.innerHTML='';
+    toC1.forEach(function(c){col1.appendChild(c);});
+    toC2.forEach(function(c){col2.appendChild(c);});
+  });
+}
+
 // ── INIT ─────────────────────────────────────────────────
 async function init(){
   var loggedIn = await checkSession();
@@ -2333,6 +2363,8 @@ async function init(){
     syncFaturas();
     salvar();
     render();
+    var resizeTimer;
+    window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(balanceDash,150);});
   } else {
     document.getElementById('login-screen').style.display='flex';
     document.getElementById('app-screen').style.display='none';

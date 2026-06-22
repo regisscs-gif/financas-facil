@@ -463,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v89';
+var APP_VERSION = 'v90';
 
 var currentUser = null;
 var accessToken = null;
@@ -2420,22 +2420,38 @@ function renderProj(){
   document.getElementById('proj-donut').innerHTML=h3;
 
   // ── 4. Comprometimento da renda ──
+  // Modelo: para cada fixo, "realizado quando existe, senão planejado".
+  // Casa cada fixo a um débito real (avulso/importado) por categoria+valor; se
+  // casar, o fixo conta pelo valor REAL e o débito sai das Variáveis; senão,
+  // conta pelo planejado (mantém a barra preenchida). Parcelas em balde próprio.
   var rec=somaR(curM,curY);
   var mkComp=mesKey(curM,curY);
-  var fixE=fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).reduce(function(s,f){return s+f.val;},0);
-  // Fixos substituídos por débito real no extrato: mantém o comprometimento
-  // preenchido usando max(planejado, real). Só conta os que vieram de
-  // substituição na importação (o.sub), não exclusões manuais.
-  db.ocorrs.filter(function(o){return o.mk===mkComp&&o.deleted&&o.sub;}).forEach(function(o){
-    var base=null;
-    db.fixos.forEach(function(fv){if(fv.gid===o.gid&&fv.ini<=mkComp&&(fv.fim===null||fv.fim>mkComp)){if(!base||fv.ini>base.ini)base=fv;}});
-    if(base&&base.tipo==='e')fixE+=Math.max(base.val,o.subVal||0);
+  // Fixos de despesa vigentes no mês (versão por gid), pelo valor planejado,
+  // ignorando supressões (o fixo permanece no balde "Fixos" mesmo já debitado).
+  var fixDefs={};
+  db.fixos.forEach(function(f){
+    if(f.tipo!=='e')return;
+    if(f.ini<=mkComp&&(f.fim===null||f.fim>mkComp)){
+      if(!fixDefs[f.gid]||f.ini>fixDefs[f.gid].ini)fixDefs[f.gid]={gid:f.gid,val:f.val,cat:f.cat,ini:f.ini};
+    }
+  });
+  db.ocorrs.forEach(function(o){if(o.mk===mkComp&&!o.deleted&&fixDefs[o.gid])fixDefs[o.gid].val=o.val;});
+  var fixList=Object.keys(fixDefs).map(function(g){return fixDefs[g];});
+  // Débitos reais do mês (avulsos + importados); parcelas têm balde próprio.
+  var reais=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&(l.sub==='av'||l.sub==='imp');});
+  var consumido={},fixE=0;
+  fixList.forEach(function(f){
+    var tol=Math.max(f.val*0.25,30),best=null,bestDiff=Infinity,bestCat=false;
+    reais.forEach(function(l){
+      if(consumido[l.id])return;
+      var diff=Math.abs(l.val-f.val);if(diff>tol)return;
+      var catM=(l.cat===f.cat);
+      if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
+    });
+    if(best){consumido[best.id]=true;fixE+=best.val;}else fixE+=f.val;
   });
   var parcE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='pa';}).reduce(function(s,l){return s+l.val;},0);
-  // Variáveis: avulsos + débitos importados do extrato (sub='imp'). Exclui os
-  // importados já vinculados a um fixo substituído (subGid), pois esses já entram
-  // em fixE via max(planejado, real) acima — evita dupla contagem.
-  var varE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&(l.sub==='av'||(l.sub==='imp'&&!l.subGid));}).reduce(function(s,l){return s+l.val;},0);
+  var varE=reais.filter(function(l){return!consumido[l.id];}).reduce(function(s,l){return s+l.val;},0);
   var livre=rec-fixE-parcE-varE;
   var h4;
   if(rec<=0){h4='<div class="empty">Sem receita cadastrada no mês atual.</div>';}

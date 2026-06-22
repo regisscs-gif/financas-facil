@@ -463,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v88';
+var APP_VERSION = 'v89';
 
 var currentUser = null;
 var accessToken = null;
@@ -2432,7 +2432,10 @@ function renderProj(){
     if(base&&base.tipo==='e')fixE+=Math.max(base.val,o.subVal||0);
   });
   var parcE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='pa';}).reduce(function(s,l){return s+l.val;},0);
-  var varE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='av';}).reduce(function(s,l){return s+l.val;},0);
+  // Variáveis: avulsos + débitos importados do extrato (sub='imp'). Exclui os
+  // importados já vinculados a um fixo substituído (subGid), pois esses já entram
+  // em fixE via max(planejado, real) acima — evita dupla contagem.
+  var varE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&(l.sub==='av'||(l.sub==='imp'&&!l.subGid));}).reduce(function(s,l){return s+l.val;},0);
   var livre=rec-fixE-parcE-varE;
   var h4;
   if(rec<=0){h4='<div class="empty">Sem receita cadastrada no mês atual.</div>';}

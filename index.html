@@ -100,8 +100,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   .page{padding:16px 24px}
   .logo{display:none}
   #pg-dash.on{display:flex;gap:16px;align-items:flex-start}
-  #dash-col1{flex:0 0 38%;min-width:0}
-  #dash-col2{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  #dash-col1{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:10px}
+  #dash-col2{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:10px}
 
   .ov{align-items:center}
   .mod{border-radius:16px;max-width:520px;max-height:85vh}
@@ -463,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v90';
+var APP_VERSION = 'v91';
 
 var currentUser = null;
 var accessToken = null;
@@ -2452,22 +2452,30 @@ function renderProj(){
   });
   var parcE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='pa';}).reduce(function(s,l){return s+l.val;},0);
   var varE=reais.filter(function(l){return!consumido[l.id];}).reduce(function(s,l){return s+l.val;},0);
-  var livre=rec-fixE-parcE-varE;
+  // Cartão: fatura(s) que vencem neste mês (sub='fat', já somente "eu" via syncFaturas).
+  var ccE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='fat';}).reduce(function(s,l){return s+l.val;},0);
+  var livre=rec-fixE-parcE-varE-ccE;
   var h4;
   if(rec<=0){h4='<div class="empty">Sem receita cadastrada no mês atual.</div>';}
   else{
-    var pF=Math.min(100,Math.round((fixE/rec)*100)),pP=Math.min(100-pF,Math.round((parcE/rec)*100)),pV=Math.min(100-pF-pP,Math.round((varE/rec)*100)),pL=Math.max(0,100-pF-pP-pV);
+    var pF=Math.min(100,Math.round((fixE/rec)*100));
+    var pP=Math.min(100-pF,Math.round((parcE/rec)*100));
+    var pV=Math.min(100-pF-pP,Math.round((varE/rec)*100));
+    var pC=Math.min(100-pF-pP-pV,Math.round((ccE/rec)*100));
+    var pL=Math.max(0,100-pF-pP-pV-pC);
     h4='<div style="font-size:11px;color:#7b80a0;margin-bottom:6px">Receita do mês: <b style="color:#e8eaf6">'+fmt(rec)+'</b></div>'
       +'<div style="display:flex;height:20px;border-radius:99px;overflow:hidden;margin-bottom:10px">'
       +(pF?'<div style="width:'+pF+'%;background:#818cf8"></div>':'')
       +(pP?'<div style="width:'+pP+'%;background:#fbbf24"></div>':'')
       +(pV?'<div style="width:'+pV+'%;background:#f87171"></div>':'')
+      +(pC?'<div style="width:'+pC+'%;background:#4ecdc4"></div>':'')
       +(pL?'<div style="width:'+pL+'%;background:#22263a"></div>':'')
       +'</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:10px">'
       +'<span><span style="display:inline-block;width:8px;height:8px;background:#818cf8;border-radius:2px;margin-right:3px"></span>Fixos '+fmt(fixE)+'</span>'
       +'<span><span style="display:inline-block;width:8px;height:8px;background:#fbbf24;border-radius:2px;margin-right:3px"></span>Parcelas '+fmt(parcE)+'</span>'
       +'<span><span style="display:inline-block;width:8px;height:8px;background:#f87171;border-radius:2px;margin-right:3px"></span>Variáveis '+fmt(varE)+'</span>'
+      +(ccE?'<span><span style="display:inline-block;width:8px;height:8px;background:#4ecdc4;border-radius:2px;margin-right:3px"></span>💳 Cartão '+fmt(ccE)+'</span>':'')
       +'<span style="color:'+(livre>=0?'#34d399':'#f87171')+'">'
       +'<span style="display:inline-block;width:8px;height:8px;background:'+(livre>=0?'#34d399':'#f87171')+';border-radius:2px;margin-right:3px"></span>'
       +'Livre '+fmt(Math.abs(livre))+(livre<0?' ⚠️':'')+'</span></div>';
@@ -2537,26 +2545,14 @@ function balanceDash(){
   var col1=document.getElementById('dash-col1');
   var col2=document.getElementById('dash-col2');
   if(!col1||!col2)return;
-  var SUMMARY=3; // saldo card, row2, d-cc-card
-  // Reúne todos os cards de gráficos (onde quer que estejam)
-  var charts=[].slice.call(col1.children,SUMMARY).concat([].slice.call(col2.children));
-  // Reseta: tudo em col2 para medir
-  while(col1.children.length>SUMMARY)col1.removeChild(col1.lastElementChild);
-  col2.innerHTML='';
-  charts.forEach(function(c){col2.appendChild(c);});
-  // Aguarda layout e redistribui
-  requestAnimationFrame(function(){
-    var heights=charts.map(function(c){return c.offsetHeight;});
-    var GAP=10;
-    var h1=col1.offsetHeight,h2=0;
-    var toC1=[],toC2=[];
-    charts.forEach(function(c,i){
-      if(h1<=h2){toC1.push(c);h1+=heights[i]+GAP;}
-      else{toC2.push(c);h2+=heights[i]+GAP;}
-    });
-    col2.innerHTML='';
-    toC1.forEach(function(c){col1.appendChild(c);});
-    toC2.forEach(function(c){col2.appendChild(c);});
+  // Distribuição DETERMINÍSTICA por ordem fixa (sem medir altura), para o
+  // dashboard manter sempre o mesmo layout entre reloads. col1 já tem os 3
+  // cards de resumo no topo; os gráficos vão: pares→col2, ímpares→col1.
+  var ORDER=['proj-re','proj-donut','proj-comp','proj-top5','proj-cccat'];
+  ORDER.forEach(function(id,i){
+    var inner=document.getElementById(id);if(!inner)return;
+    var card=inner.closest('.card');if(!card)return;
+    (i%2===0?col2:col1).appendChild(card);
   });
 }
 

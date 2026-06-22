@@ -462,7 +462,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v86';
+var APP_VERSION = 'v87';
 
 var currentUser = null;
 var accessToken = null;
@@ -1541,7 +1541,7 @@ function mostrarPreviewExtrato(dupCount){
       var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
       fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
         var jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.deleted;});
-        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,checked:jaSuprimido});
+        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:jaSuprimido});
       });
     });
   }
@@ -1642,14 +1642,28 @@ function confirmarImportExtrato(){
     extratoImportBuffer=[];fixosParaSuprimir=[];render();
     return;
   }
+  var novos=[];
   itens.forEach(function(r){
-    db.lancs.push({id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey});
+    var nl={id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey};
+    db.lancs.push(nl);novos.push(nl);
   });
   db.lancs.sort(function(a,b){return b.data.localeCompare(a.data);});
   var suprimidos=fixosParaSuprimir.filter(function(f){return f.checked;});
+  // Vincula cada fixo suprimido ao débito real importado que o substitui
+  // (mesma categoria de preferência, depois menor diferença de valor), para
+  // o comprometimento usar max(planejado, real) sem dupla contagem.
+  var candidatos=novos.filter(function(l){return l.tipo==='e';}),usados={};
   suprimidos.forEach(function(f){
+    var best=null,bestDiff=Infinity,bestCat=false;
+    candidatos.forEach(function(l){
+      if(usados[l.id])return;
+      var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
+      if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
+    });
+    var subVal=0;
+    if(best){usados[best.id]=true;best.subGid=f.gid;subVal=best.val;}
     var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
-    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true};
+    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
     if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
   });
   log('extrato_import',{count:itens.length,fixosSup:suprimidos.length});
@@ -2307,7 +2321,16 @@ function renderProj(){
 
   // ── 4. Comprometimento da renda ──
   var rec=somaR(curM,curY);
+  var mkComp=mesKey(curM,curY);
   var fixE=fixosVigentes(curM,curY).filter(function(f){return f.tipo==='e';}).reduce(function(s,f){return s+f.val;},0);
+  // Fixos substituídos por débito real no extrato: mantém o comprometimento
+  // preenchido usando max(planejado, real). Só conta os que vieram de
+  // substituição na importação (o.sub), não exclusões manuais.
+  db.ocorrs.filter(function(o){return o.mk===mkComp&&o.deleted&&o.sub;}).forEach(function(o){
+    var base=null;
+    db.fixos.forEach(function(fv){if(fv.gid===o.gid&&fv.ini<=mkComp&&(fv.fim===null||fv.fim>mkComp)){if(!base||fv.ini>base.ini)base=fv;}});
+    if(base&&base.tipo==='e')fixE+=Math.max(base.val,o.subVal||0);
+  });
   var parcE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='pa';}).reduce(function(s,l){return s+l.val;},0);
   var varE=lancsDoMes(curM,curY).filter(function(l){return l.tipo==='e'&&l.sub==='av';}).reduce(function(s,l){return s+l.val;},0);
   var livre=rec-fixE-parcE-varE;

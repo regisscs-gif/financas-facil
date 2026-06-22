@@ -261,7 +261,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </nav>
 </div>
 
-<input type="file" id="cc-import-input" accept=".csv,.pdf" style="display:none">
+<input type="file" id="cc-import-input" accept=".csv,.pdf,.xlsx" style="display:none">
 <input type="file" id="extrato-file-input" accept=".xls,.xlsx,.csv" style="display:none">
 
 <!-- MODAIS -->
@@ -462,7 +462,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v84';
+var APP_VERSION = 'v85';
 
 var currentUser = null;
 var accessToken = null;
@@ -1141,6 +1141,8 @@ document.getElementById('cc-import-input').addEventListener('change',function(e)
       :'<option value="">Nenhum cartão cadastrado</option>';
     document.getElementById('pdf-pass-inp').value='';
     document.getElementById('ov-pdf-pass').classList.add('on');
+  }else if(ext==='xlsx'){
+    lerFaturaXLSX(file);
   }else{
     var reader=new FileReader();
     reader.onload=function(ev){mostrarPreviewCSV(ev.target.result);};
@@ -1174,6 +1176,9 @@ function mostrarPreviewCSV(text){
     csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key,include:!softDupDescs,softDupDescs:softDupDescs||null,cat:autoCatCC(lancamento),titular:'eu'});
   });
   csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
+  renderPreviewFaturaBuffer(pagamentos,duplicados);
+}
+function renderPreviewFaturaBuffer(pagamentos,duplicados){
   var softCount=csvImportBuffer.filter(function(r){return r.softDupDescs;}).length;
   var n=csvImportBuffer.length;
   document.getElementById('import-summary').innerHTML=
@@ -1183,7 +1188,7 @@ function mostrarPreviewCSV(text){
     +(softCount?'<div style="margin-top:6px;font-size:11px;color:#fbbf24">⚠️ '+softCount+' possív'+(softCount!==1?'eis':'el')+' duplicata'+(softCount!==1?'s':'')+' — pré-desmarcado'+(softCount!==1?'s':'')+'</div>':'')
     +'<div style="margin-top:8px;display:flex;align-items:center;gap:6px">'
     +'<span style="font-size:11px;color:#7b80a0">Titular padrão:</span>'
-    +'<button id="csv-tit-all-eu" onclick="csvSetTitularAll(\'eu\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(248,113,113,.3);color:#f87171">EU</button>'
+    +'<button id="csv-tit-all-eu" onclick="csvSetTitularAll(\'eu\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(248,113,133,.3);color:#f87171">EU</button>'
     +'<button id="csv-tit-all-fam" onclick="csvSetTitularAll(\'fam\')" style="font-size:10px;padding:2px 9px;border-radius:4px;border:none;cursor:pointer;font-weight:700;background:rgba(100,100,100,.2);color:#7b80a0">FAM</button>'
     +'</div>';
   document.getElementById('import-preview').innerHTML=n===0
@@ -1193,18 +1198,86 @@ function mostrarPreviewCSV(text){
       var softNote=r.softDupDescs?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="Já lançado como: '+escHtml(r.softDupDescs.join(', '))+'">⚠️ dup?</span>':'';
       var rowStyle=r.softDupDescs?'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a;opacity:.6':'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a';
       var catOpts=(db.catsE||[]).map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+      var titBg=r.titular==='eu'?'rgba(248,113,113,.25)':'rgba(251,191,36,.25)';
+      var titCor=r.titular==='eu'?'#f87171':'#fbbf24';
       return '<div style="'+rowStyle+'">'
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="csvSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+lp[2]+'/'+lp[1]+'</span>'
         +softNote
         +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="var s=this.style;var e=s.whiteSpace===\'normal\';s.whiteSpace=e?\'nowrap\':\'normal\';s.overflow=e?\'hidden\':\'visible\'">'+escHtml(r.lancamento)+'</span>'
         +'<select onchange="csvSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'+catOpts+'</select>'
-        +'<button id="csv-tit-'+i+'" onclick="csvSetTitular('+i+',csvImportBuffer['+i+'].titular===\'eu\'?\'fam\':\'eu\')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:rgba(248,113,113,.25);color:#f87171">EU</button>'
+        +'<button id="csv-tit-'+i+'" onclick="csvSetTitular('+i+',csvImportBuffer['+i+'].titular===\'eu\'?\'fam\':\'eu\')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:'+titBg+';color:'+titCor+'">'+r.titular.toUpperCase()+'</button>'
         +'<span style="font-size:12px;font-weight:700;color:#f87171;flex-shrink:0;min-width:60px;text-align:right">-'+fmt(r.valor)+'</span>'
         +'</div>';
     }).join('');
   atualizarBtnCSV();
   document.getElementById('ov-import-csv').classList.add('on');
+}
+function lerFaturaXLSX(file){
+  if(typeof XLSX==='undefined'){
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=function(){lerFaturaXLSX(file);};
+    s.onerror=function(){toast('Sem conexão para carregar leitor XLSX.');};
+    document.head.appendChild(s);
+    return;
+  }
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var data=new Uint8Array(ev.target.result);
+      var wb=XLSX.read(data,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      parsearFaturaXLSX(rows);
+    }catch(e){toast('Erro ao ler o arquivo XLSX.');}
+  };
+  reader.readAsArrayBuffer(file);
+}
+function parsearFaturaXLSX(rows){
+  // Localiza cabeçalho: linha com "Data" em col[1]
+  var headerIdx=-1;
+  for(var i=0;i<rows.length;i++){
+    if(String(rows[i][1]||'').trim().toLowerCase()==='data'){headerIdx=i;break;}
+  }
+  if(headerIdx<0){toast('Formato XLSX não reconhecido. Esperado cabeçalho com "Data".');return;}
+  var existingKeys={},softKeys={};
+  db.ccLancs.forEach(function(l){
+    if(l.csvKey)existingKeys[l.csvKey]=true;
+    var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
+    if(!softKeys[k])softKeys[k]=[];
+    softKeys[k].push(l.desc);
+  });
+  var pagamentos=0,duplicados=0;
+  csvImportBuffer=[];
+  rows.slice(headerIdx+1).forEach(function(row){
+    var dataStr=String(row[1]||'').trim();
+    var desc=String(row[2]||'').trim().replace(/\s+/g,' ');
+    var parcStr=String(row[3]||'').trim();
+    var valorStr=String(row[4]||'').trim();
+    var titStr=String(row[6]||'').trim().toLowerCase();
+    if(!dataStr||!desc||!valorStr)return;
+    var dp=dataStr.split('/');
+    if(dp.length!==3)return;
+    var data=dp[2]+'-'+pad(parseInt(dp[1],10))+'-'+pad(parseInt(dp[0],10));
+    // Formato US: vírgula como milhar, ponto como decimal
+    var val=parseFloat(valorStr.replace(/R\$\s*/,'').replace(/,/g,''));
+    if(isNaN(val))return;
+    if(val<=0){pagamentos++;return;}
+    // Agrega parcelamento ao desc no mesmo padrão do PDF (I1/2)
+    var pm=parcStr.match(/parcela\s+(\d+)\s+de\s+(\d+)/i);
+    var lancamento=desc+(pm?' I'+pm[1]+'/'+pm[2]:'');
+    var key=data+'|'+lancamento+'|'+val;
+    if(existingKeys[key]){duplicados++;return;}
+    var softDupDescs=(softKeys[data+'|'+Math.round(val*100)/100])||null;
+    csvImportBuffer.push({
+      data:data,lancamento:lancamento,valor:val,csvKey:key,
+      include:!softDupDescs,softDupDescs:softDupDescs||null,
+      cat:autoCatCC(lancamento),titular:titStr==='titular'?'eu':'fam'
+    });
+  });
+  csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
+  renderPreviewFaturaBuffer(pagamentos,duplicados);
 }
 function autoCatCC(desc){
   var d=desc.toUpperCase();

@@ -46,6 +46,7 @@ body{background:#0f1117;color:#e8eaf6;max-width:430px;margin:0 auto;min-height:1
 .tprc{background:rgba(129,140,248,.25);color:#818cf8}
 .tfam{background:rgba(251,191,36,.2);color:#fbbf24}
 .fab{position:fixed;bottom:68px;right:calc(50% - 215px + 14px);width:50px;height:50px;border-radius:50%;background:#818cf8;border:none;color:#fff;font-size:28px;cursor:pointer;box-shadow:0 4px 18px rgba(129,140,248,.5);z-index:40;display:flex;align-items:center;justify-content:center;line-height:1}
+#fab-menu{position:fixed;bottom:128px;right:calc(50% - 215px + 14px);z-index:39;flex-direction:column;gap:10px;align-items:flex-end}
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1a1d27;border-top:1px solid #2a2f4a;display:flex;z-index:50}
 .nb{flex:1;border:none;background:none;color:#7b80a0;padding:9px 2px 7px;font-size:9px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
 .nb.on{color:#818cf8}.nb span{font-size:16px}
@@ -240,7 +241,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     </div>
   </div>
 
-  <div id="fab-menu" style="display:none;position:fixed;bottom:128px;right:calc(50% - 215px + 14px);z-index:39;flex-direction:column;gap:10px;align-items:flex-end">
+  <div id="fab-menu" style="display:none">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="background:#1a1d27;border:1px solid #2a2f4a;color:#e8eaf6;padding:5px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.6)">📥 Importar</span>
       <button onclick="fecharFabMenu();abrirImportSelector()" style="width:42px;height:42px;border-radius:50%;background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;font-size:19px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center">📂</button>
@@ -250,7 +251,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <button onclick="fecharFabMenu();abrirNovoLanc()" style="width:42px;height:42px;border-radius:50%;background:#22263a;border:1px solid #3a3f5c;color:#34d399;font-size:22px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center">+</button>
     </div>
   </div>
-  <button class="fab" id="fab">+</button>
+  <button class="fab" id="fab" style="display:none">+</button>
   <nav class="nav">
     <button class="nb on" data-pg="dash"><span>⊞</span>Dash</button>
     <button class="nb" data-pg="lanc"><span>📋</span>Lanç.</button>
@@ -462,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v87';
+var APP_VERSION = 'v88';
 
 var currentUser = null;
 var accessToken = null;
@@ -1151,9 +1152,10 @@ document.getElementById('cc-import-input').addEventListener('change',function(e)
 });
 function mostrarPreviewCSV(text){
   var lines=text.trim().split('\n');
-  var existingKeys={},softKeys={};
+  var existingKeys={},softKeys={},existingParc={};
   db.ccLancs.forEach(function(l){
     if(l.csvKey)existingKeys[l.csvKey]=true;
+    var pk=ccParcKey(l);if(pk)existingParc[pk]=true;
     var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
     if(!softKeys[k])softKeys[k]=[];
     softKeys[k].push(l.desc);
@@ -1170,10 +1172,14 @@ function mostrarPreviewCSV(text){
     if(!data||isNaN(valor))return;
     if(valor<=0){pagamentos++;return;}
     var key=data+'|'+lancamento+'|'+valor;
-    if(existingKeys[key]){duplicados++;return;}
     var dataAdj=ajustarDataParcela(lancamento,data);
+    var parc=parcelaFatura(lancamento,dataAdj,valor,existingParc,curCCId);
+    if(parc.isParcela){
+      if(existingParc[curCCId+'§'+parc.baseDesc+'§'+valor+'§'+parc.pn+'/'+parc.pt]){duplicados++;return;}
+    }else if(existingKeys[key]){duplicados++;return;}
     var softDupDescs=(softKeys[dataAdj+'|'+Math.round(valor*100)/100])||null;
-    csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key,include:!softDupDescs,softDupDescs:softDupDescs||null,cat:autoCatCC(lancamento),titular:'eu'});
+    csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key,include:!softDupDescs,softDupDescs:softDupDescs||null,cat:autoCatCC(lancamento),titular:'eu',
+      isParcela:parc.isParcela,pn:parc.pn,pt:parc.pt,baseDesc:parc.baseDesc,futureDates:parc.futureDates});
   });
   csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
   renderPreviewFaturaBuffer(pagamentos,duplicados);
@@ -1200,11 +1206,14 @@ function renderPreviewFaturaBuffer(pagamentos,duplicados){
       var catOpts=(db.catsE||[]).map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
       var titBg=r.titular==='eu'?'rgba(248,113,113,.25)':'rgba(251,191,36,.25)';
       var titCor=r.titular==='eu'?'#f87171':'#fbbf24';
+      var futN=(r.isParcela&&r.futureDates)?r.futureDates.filter(function(f){return!f.dup;}).length:0;
+      var futTag=futN?'<span style="font-size:9px;color:#7b80a0;flex-shrink:0" title="parcelas futuras a criar">+'+futN+'↗</span>':'';
       return '<div style="'+rowStyle+'">'
         +'<input type="checkbox"'+(r.include?' checked':'')+' onchange="csvSetInclude('+i+',this.checked)" style="flex-shrink:0;width:18px;height:18px">'
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+lp[2]+'/'+lp[1]+'</span>'
         +softNote
         +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="var s=this.style;var e=s.whiteSpace===\'normal\';s.whiteSpace=e?\'nowrap\':\'normal\';s.overflow=e?\'hidden\':\'visible\'">'+escHtml(r.lancamento)+'</span>'
+        +futTag
         +'<select onchange="csvSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'+catOpts+'</select>'
         +'<button id="csv-tit-'+i+'" onclick="csvSetTitular('+i+',csvImportBuffer['+i+'].titular===\'eu\'?\'fam\':\'eu\')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:'+titBg+';color:'+titCor+'">'+r.titular.toUpperCase()+'</button>'
         +'<span style="font-size:12px;font-weight:700;color:#f87171;flex-shrink:0;min-width:60px;text-align:right">-'+fmt(r.valor)+'</span>'
@@ -1233,6 +1242,34 @@ function lerFaturaXLSX(file){
     }catch(e){toast('Erro ao ler o arquivo XLSX.');}
   };
   reader.readAsArrayBuffer(file);
+}
+// Identidade de uma parcela de cartão, independente da data (p/ dedup robusto).
+// Reconhece tanto o formato novo (sub='pa' + pn/pt) quanto o antigo (sufixo " I N/T" no desc).
+function ccParcKey(l){
+  if(l.sub==='pa'&&l.pn&&l.pt)return l.ccId+'§'+(l.desc||'')+'§'+l.val+'§'+l.pn+'/'+l.pt;
+  var m=(l.desc||'').match(/\sI(\d+)\/(\d+)$/);
+  if(m)return l.ccId+'§'+l.desc.replace(/\sI\d+\/\d+$/,'').trim()+'§'+l.val+'§'+m[1]+'/'+m[2];
+  return null;
+}
+// Extrai parcela do lançamento "Desc I N/T" → {pn,pt,base} ou null.
+function parseParcLanc(lanc){
+  var m=(lanc||'').match(/\bI(\d{1,2})\/(\d{1,2})$/i);
+  if(!m)return null;
+  var pn=parseInt(m[1],10),pt=parseInt(m[2],10);
+  if(pt>1&&pn>=1&&pn<=pt)return{pn:pn,pt:pt,base:lanc.replace(/\s*I\d{1,2}\/\d{1,2}$/i,'').trim()};
+  return null;
+}
+// Calcula dados de parcela + parcelas futuras (pn+1..pt) p/ uma linha de fatura importada.
+function parcelaFatura(lancamento,data,valor,existingParc,ccId){
+  var p=parseParcLanc(lancamento);
+  if(!p)return{isParcela:false,pn:0,pt:0,baseDesc:lancamento,futureDates:[]};
+  var dpp=data.split('-'),fy=+dpp[0],fm=+dpp[1],fd=+dpp[2],futuras=[];
+  for(var fk=1;fk<=p.pt-p.pn;fk++){
+    var fdata=avanca(fy,fm,fd,fk),fpn=p.pn+fk,flanc=p.base+' I'+fpn+'/'+p.pt;
+    futuras.push({data:fdata,lancamento:flanc,csvKey:fdata+'|'+flanc+'|'+valor,pn:fpn,pt:p.pt,
+      dup:!!existingParc[ccId+'§'+p.base+'§'+valor+'§'+fpn+'/'+p.pt]});
+  }
+  return{isParcela:true,pn:p.pn,pt:p.pt,baseDesc:p.base,futureDates:futuras};
 }
 function parsearFaturaXLSX(rows){
   // Localiza cabeçalho: linha com "Data" em col[1]
@@ -1268,12 +1305,16 @@ function parsearFaturaXLSX(rows){
     var pm=parcStr.match(/parcela\s+(\d+)\s+de\s+(\d+)/i);
     var lancamento=desc+(pm?' I'+pm[1]+'/'+pm[2]:'');
     var key=data+'|'+lancamento+'|'+val;
-    if(existingKeys[key]){duplicados++;return;}
+    var parc=parcelaFatura(lancamento,data,val,existingParc,curCCId);
+    if(parc.isParcela){
+      if(existingParc[curCCId+'§'+parc.baseDesc+'§'+val+'§'+parc.pn+'/'+parc.pt]){duplicados++;return;}
+    }else if(existingKeys[key]){duplicados++;return;}
     var softDupDescs=(softKeys[data+'|'+Math.round(val*100)/100])||null;
     csvImportBuffer.push({
       data:data,lancamento:lancamento,valor:val,csvKey:key,
       include:!softDupDescs,softDupDescs:softDupDescs||null,
-      cat:autoCatCC(lancamento),titular:titStr==='titular'?'eu':'fam'
+      cat:autoCatCC(lancamento),titular:titStr==='titular'?'eu':'fam',
+      isParcela:parc.isParcela,pn:parc.pn,pt:parc.pt,baseDesc:parc.baseDesc,futureDates:parc.futureDates
     });
   });
   csvImportBuffer.sort(function(a,b){return b.data.localeCompare(a.data);});
@@ -1312,13 +1353,72 @@ function atualizarBtnCSV(){
 function confirmarImportCSV(){
   var itens=csvImportBuffer.filter(function(r){return r.include;});
   if(!itens.length||!curCCId)return;
+  var futurasCriadas=0;
   itens.forEach(function(r){
-    db.ccLancs.push({id:db.nid++,ccId:curCCId,desc:r.lancamento,val:r.valor,data:r.data,cat:r.cat,titular:r.titular,csvKey:r.csvKey});
+    if(r.isParcela){
+      var pid=db.nid;
+      db.ccLancs.push({id:db.nid++,ccId:curCCId,desc:r.baseDesc,val:r.valor,data:r.data,cat:r.cat,titular:r.titular,csvKey:r.csvKey,sub:'pa',pn:r.pn,pt:r.pt,pid:pid});
+      (r.futureDates||[]).forEach(function(f){
+        if(f.dup)return;
+        db.ccLancs.push({id:db.nid++,ccId:curCCId,desc:r.baseDesc,val:r.valor,data:f.data,cat:r.cat,titular:r.titular,csvKey:f.csvKey,sub:'pa',pn:f.pn,pt:f.pt,pid:pid});
+        futurasCriadas++;
+      });
+    }else{
+      db.ccLancs.push({id:db.nid++,ccId:curCCId,desc:r.lancamento,val:r.valor,data:r.data,cat:r.cat,titular:r.titular,csvKey:r.csvKey});
+    }
   });
-  log('csv_import',{ccId:curCCId,count:itens.length});
+  log('csv_import',{ccId:curCCId,count:itens.length,futuras:futurasCriadas});
   syncFaturas();fechar('ov-import-csv');salvar();
-  toast('✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!');
+  var msg='✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!';
+  if(futurasCriadas)msg+=' +'+futurasCriadas+' parcela'+(futurasCriadas!==1?'s':'')+' futura'+(futurasCriadas!==1?'s':'')+'!';
+  toast(msg);
   csvImportBuffer=[];render();
+}
+// Backfill: faturas CSV antigas gravavam a parcela como um único lançamento
+// ("Desc I N/T", sem replicar futuras). Agrupa por compra (cartão+desc+valor+total),
+// normaliza para sub='pa' e cria as parcelas faltantes além da maior já existente.
+function reprocessarParcelasFaturaCSV(){
+  var grupos={};
+  db.ccLancs.forEach(function(l){
+    var m=(l.desc||'').match(/\sI(\d+)\/(\d+)$/);
+    if(!m)return;                       // só registros antigos com sufixo " I N/T"
+    if(l.sub==='pa'&&l.pid)return;       // já normalizado
+    var pn=parseInt(m[1],10),pt=parseInt(m[2],10);
+    if(!(pt>1&&pn>=1&&pn<=pt))return;
+    var base=l.desc.replace(/\sI\d+\/\d+$/,'').trim();
+    var gk=l.ccId+'§'+base+'§'+l.val+'§'+pt+'§'+(l.titular||'eu');
+    if(!grupos[gk])grupos[gk]={ccId:l.ccId,base:base,val:l.val,pt:pt,titular:l.titular||'eu',cat:l.cat,recs:[]};
+    grupos[gk].recs.push({l:l,pn:pn});
+  });
+  var existId={};
+  db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existId[k]=true;});
+  var novos=[],gruposN=0,criados=0;
+  Object.keys(grupos).forEach(function(gk){
+    var g=grupos[gk];
+    g.recs.sort(function(a,b){return a.pn-b.pn;});
+    var pid=g.recs[0].l.id,temPn={};
+    g.recs.forEach(function(r){
+      r.l.sub='pa';r.l.pn=r.pn;r.l.pt=g.pt;r.l.pid=pid;r.l.desc=g.base; // normaliza p/ formato novo
+      temPn[r.pn]=true;
+    });
+    gruposN++;
+    var last=g.recs[g.recs.length-1];
+    if(last.pn>=g.pt)return;
+    var dp=last.l.data.split('-'),fy=+dp[0],fm=+dp[1],fd=+dp[2];
+    for(var p=last.pn+1;p<=g.pt;p++){
+      if(temPn[p])continue;
+      var idk=g.ccId+'§'+g.base+'§'+g.val+'§'+p+'/'+g.pt;
+      if(existId[idk])continue;
+      existId[idk]=true;
+      var fdata=avanca(fy,fm,fd,p-last.pn);
+      novos.push({id:db.nid++,ccId:g.ccId,desc:g.base,val:g.val,data:fdata,cat:g.cat,titular:g.titular,
+        csvKey:fdata+'|'+(g.base+' I'+p+'/'+g.pt)+'|'+g.val,sub:'pa',pn:p,pt:g.pt,pid:pid});
+      criados++;
+    }
+  });
+  if(novos.length)db.ccLancs=db.ccLancs.concat(novos);
+  if(gruposN||criados)log('reproc_parc_csv',{grupos:gruposN,criados:criados});
+  return{grupos:gruposN,criados:criados};
 }
 
 // ── IMPORT EXTRATO ───────────────────────────────────────
@@ -2455,10 +2555,13 @@ async function init(){
     await iniciarDados();
     await carregarDados();
     migrarDados();
+    var _rp=(!db.migParcCSV)?reprocessarParcelasFaturaCSV():null;
+    db.migParcCSV=1;
     ajustarCicloInicial();
     syncFaturas();
     salvar();
     render();
+    if(_rp&&_rp.criados)setTimeout(function(){toast('✓ Reprocessamento: '+_rp.criados+' parcela'+(_rp.criados!==1?'s':'')+' futura'+(_rp.criados!==1?'s':'')+' criada'+(_rp.criados!==1?'s':'')+'.');},900);
     var resizeTimer;
     window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(balanceDash,150);});
   } else {

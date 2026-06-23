@@ -463,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v91';
+var APP_VERSION = 'v92';
 
 var currentUser = null;
 var accessToken = null;
@@ -1271,6 +1271,28 @@ function parcelaFatura(lancamento,data,valor,existingParc,ccId){
   }
   return{isParcela:true,pn:p.pn,pt:p.pt,baseDesc:p.base,futureDates:futuras};
 }
+// ── Reconciliação parcela avulsa × pagamento real ──
+function normTxt(s){return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
+function parcBaseDesc(desc){return (desc||'').replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();}
+function mesAbs(s){var p=(s||'').split('-');return (+p[0])*12+(+p[1]);}
+// Procura uma parcela avulsa pendente (sub='pa', !pago) que case com um débito real:
+// valor ~ (tol max(10%,5)), descrição do débito CONTÉM a base da parcela, e mês ≤1 de
+// distância. Escolhe a de mês mais próximo. Retorna a parcela ou null.
+function matchParcelaPendente(desc,val,dataStr,usadas){
+  var nd=normTxt(desc);if(!nd)return null;
+  var dAbs=mesAbs(dataStr),best=null,bestDiff=99;
+  db.lancs.forEach(function(l){
+    if(l.sub!=='pa'||l.pago||l.tipo!=='e')return;
+    if(usadas&&usadas[l.id])return;
+    if(Math.abs(l.val-val)>Math.max(l.val*0.1,5))return;
+    var nb=normTxt(parcBaseDesc(l.desc));
+    if(!nb||nd.indexOf(nb)<0)return;
+    var diff=Math.abs(mesAbs(l.data)-dAbs);
+    if(diff>1)return;
+    if(diff<bestDiff){best=l;bestDiff=diff;}
+  });
+  return best;
+}
 function parsearFaturaXLSX(rows){
   // Localiza cabeçalho: linha com "Data" em col[1]
   var headerIdx=-1;
@@ -1419,6 +1441,43 @@ function reprocessarParcelasFaturaCSV(){
   if(novos.length)db.ccLancs=db.ccLancs.concat(novos);
   if(gruposN||criados)log('reproc_parc_csv',{grupos:gruposN,criados:criados});
   return{grupos:gruposN,criados:criados};
+}
+// Reparo único: liga débitos importados/avulsos soltos às parcelas avulsas
+// correspondentes (marca como paga). Se a parcela do slot estiver faltando
+// (foi apagada na importação), recria-a a partir do débito. Idempotente.
+function reconciliarParcelasExistentes(){
+  var grupos={};
+  db.lancs.forEach(function(l){
+    if(l.sub!=='pa'||l.tipo!=='e'||!l.pid)return;
+    if(!grupos[l.pid])grupos[l.pid]={pid:l.pid,pt:l.pt,val:l.val,cat:l.cat,base:parcBaseDesc(l.desc),total:l.total,items:{}};
+    grupos[l.pid].items[l.pn]=l;
+  });
+  var gkeys=Object.keys(grupos);if(!gkeys.length)return{reconc:0,recriadas:0};
+  var reais=db.lancs.filter(function(l){return (l.sub==='imp'||l.sub==='av')&&l.tipo==='e';});
+  var reconc=0,recriadas=0,remover={};
+  gkeys.forEach(function(gk){
+    var g=grupos[gk];if(!g.base)return;
+    var nb=normTxt(g.base);
+    var anyPn=Object.keys(g.items)[0],anyL=g.items[anyPn];
+    var baseAbs=mesAbs(anyL.data)-(+anyPn-1); // mês-abs da parcela 1/N
+    reais.forEach(function(d){
+      if(remover[d.id])return;
+      if(Math.abs(d.val-g.val)>Math.max(g.val*0.1,5))return;
+      if(normTxt(d.desc).indexOf(nb)<0)return;
+      var pn=mesAbs(d.data)-baseAbs+1;
+      if(pn<1||pn>g.pt)return;
+      var ex=g.items[pn];
+      if(ex){if(ex.pago)return;ex.pago=true;ex.pagoData=d.data;ex.data=d.data;ex.obs=d.desc;reconc++;}
+      else{
+        var nova={id:db.nid++,desc:g.base+' ('+pn+'/'+g.pt+')',val:g.val,data:d.data,cat:g.cat,tipo:'e',sub:'pa',pid:g.pid,pn:pn,pt:g.pt,total:(g.total||g.val*g.pt),pago:true,pagoData:d.data,obs:d.desc};
+        db.lancs.push(nova);g.items[pn]=nova;recriadas++;
+      }
+      remover[d.id]=true;
+    });
+  });
+  if(Object.keys(remover).length)db.lancs=db.lancs.filter(function(l){return !remover[l.id];});
+  if(reconc||recriadas)log('reconc_parc_existentes',{reconc:reconc,recriadas:recriadas});
+  return{reconc:reconc,recriadas:recriadas};
 }
 
 // ── IMPORT EXTRATO ───────────────────────────────────────
@@ -1646,6 +1705,18 @@ function mostrarPreviewExtrato(dupCount){
     });
   }
 
+  // Casamento automático com parcelas avulsas pendentes (só modo extrato).
+  // Marca o débito para "absorver" a parcela (pré-selecionado, usuário pode desmarcar).
+  if(importModo!=='fatura'){
+    var parcUsadas={};
+    extratoImportBuffer.forEach(function(r){
+      r.parcelaVinc=null;r.parcelaLabel='';
+      if(r.tipo!=='e'||r.isFatura)return;
+      var pl=matchParcelaPendente(r.desc,r.val,r.data,parcUsadas);
+      if(pl){parcUsadas[pl.id]=true;r.parcelaVinc=pl.id;r.parcelaLabel=pl.pn+'/'+pl.pt;if(r.absorver===undefined)r.absorver=true;}
+    });
+  }
+
   var n=extratoImportBuffer.length;
   // Inicializa titular em todos os itens (padrão 'eu')
   extratoImportBuffer.forEach(function(r){if(!r.titular)r.titular='eu';});
@@ -1692,6 +1763,7 @@ function mostrarPreviewExtrato(dupCount){
       var softNote=r.softDupDescs?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="Já lançado como: '+escHtml(r.softDupDescs.join(', '))+'">⚠️ dup?</span>':'';
       var parcTag=r.isParcela?'<span style="font-size:9px;background:rgba(129,140,248,.2);color:#a78bfa;border-radius:3px;padding:1px 4px;flex-shrink:0">'+r.pn+'/'+r.pt+'</span>':'';
       var futTag=(r.isParcela&&r.futureDates.length)?'<span style="font-size:9px;color:#7b80a0;flex-shrink:0">+'+r.futureDates.filter(function(f){return!f.dup;}).length+'↗</span>':'';
+      var vincTag=r.parcelaVinc?'<label style="display:flex;align-items:center;gap:2px;flex-shrink:0;font-size:9px;color:#a78bfa;cursor:pointer;white-space:nowrap" title="Vincular este débito à parcela '+r.parcelaLabel+' (marca como paga, não duplica)"><input type="checkbox"'+(r.absorver?' checked':'')+' onchange="extratoSetAbsorver('+i+',this.checked)" style="width:13px;height:13px;flex-shrink:0">↔'+r.parcelaLabel+'</label>':'';
       var cats=r.tipo==='r'?db.catsR:db.catsE;
       var catOpts=cats.map(function(c){return '<option value="'+escHtml(c)+'"'+(c===r.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
       var rowStyle=r.softDupDescs?'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a;opacity:.6':'display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a';
@@ -1700,7 +1772,7 @@ function mostrarPreviewExtrato(dupCount){
         +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+p[2]+'/'+p[1]+'</span>'
         +faturaNote+softNote+parcTag
         +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var exp=s.whiteSpace===\'normal\';s.whiteSpace=exp?\'nowrap\':\'normal\';s.overflow=exp?\'hidden\':\'visible\'">'+escHtml(r.desc)+'</span>'
-        +futTag
+        +futTag+vincTag
         +'<select onchange="extratoSetCat('+i+',this.value)" style="flex-shrink:0;width:110px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'
         +catOpts
         +'</select>'
@@ -1713,6 +1785,7 @@ function mostrarPreviewExtrato(dupCount){
   document.getElementById('ov-import-extrato').classList.add('on');
 }
 function extratoSetFixoSuprimir(i,c){fixosParaSuprimir[i].checked=c;}
+function extratoSetAbsorver(i,c){extratoImportBuffer[i].absorver=c;}
 function confirmarImportExtrato(){
   var itens=extratoImportBuffer.filter(function(r){return r.include;});
   if(!itens.length)return;
@@ -1742,8 +1815,13 @@ function confirmarImportExtrato(){
     extratoImportBuffer=[];fixosParaSuprimir=[];render();
     return;
   }
-  var novos=[];
+  var novos=[],reconc=0;
   itens.forEach(function(r){
+    // Absorve o débito numa parcela avulsa pendente (1 linha só, sem duplicar).
+    if(r.parcelaVinc&&r.absorver){
+      var pl=db.lancs.find(function(l){return l.id===r.parcelaVinc&&l.sub==='pa'&&!l.pago;});
+      if(pl){pl.pago=true;pl.pagoData=r.data;pl.data=r.data;pl.obs=r.desc;reconc++;return;}
+    }
     var nl={id:db.nid++,desc:r.desc,val:r.val,data:r.data,cat:r.cat,tipo:r.tipo,sub:'imp',csvKey:r.csvKey};
     db.lancs.push(nl);novos.push(nl);
   });
@@ -1766,10 +1844,11 @@ function confirmarImportExtrato(){
     var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
     if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
   });
-  log('extrato_import',{count:itens.length,fixosSup:suprimidos.length});
+  log('extrato_import',{count:itens.length,fixosSup:suprimidos.length,parcReconc:reconc});
   fechar('ov-import-extrato');salvar();
-  var msg='✓ '+itens.length+' lançamento'+(itens.length!==1?'s':'')+' importado'+(itens.length!==1?'s':'')+'!';
-  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo'+(suprimidos.length!==1?'s':'')+' suprimido'+(suprimidos.length!==1?'s':'')+' neste mês.';
+  var msg='✓ '+novos.length+' lançamento'+(novos.length!==1?'s':'')+' importado'+(novos.length!==1?'s':'')+'!';
+  if(reconc)msg+=' '+reconc+' parcela'+(reconc!==1?'s':'')+' marcada'+(reconc!==1?'s':'')+' como paga.';
+  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo'+(suprimidos.length!==1?'s':'')+' suprimido'+(suprimidos.length!==1?'s':'')+'.';
   toast(msg);
   extratoImportBuffer=[];fixosParaSuprimir=[];render();
 }
@@ -2009,7 +2088,7 @@ function itemLancHTML(l){
       +'<div class="ival" style="color:#f87171">-'+fmt(l.val)+'</div>'
       +'<div style="width:32px"></div></div>';
   }
-  var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':l.sub==='imp'?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px">EXT</span>':'';
+  var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>'+(l.pago?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px" title="Parcela paga (pagamento real reconciliado)">✓ pago</span>':''):l.sub==='imp'?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px">EXT</span>':'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)')+'">'+emo(l.cat)+'</div>'
     +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#34d399':'#f87171')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'
@@ -2106,7 +2185,7 @@ function renderParc(){
   var grupos={};db.lancs.filter(function(l){return l.sub==='pa';}).forEach(function(l){if(!grupos[l.pid])grupos[l.pid]={desc:l.desc.replace(/ \(\d+\/\d+\)$/,''),pt:l.pt,val:l.val,cat:l.cat,items:[],total:l.total};grupos[l.pid].items.push(l);});
   var td=hoje();var el=document.getElementById('p-list');var keys=Object.keys(grupos);
   if(!keys.length){el.innerHTML='<div class="empty">Nenhum parcelamento.</div>';return;}
-  el.innerHTML=keys.map(function(k){var g=grupos[k],pg=g.items.filter(function(l){return l.data<=td;}).length,pct=Math.round((pg/g.pt)*100);var total=g.total||(g.val*g.pt);
+  el.innerHTML=keys.map(function(k){var g=grupos[k],pg=g.items.filter(function(l){return l.pago||l.data<=td;}).length,pct=Math.round((pg/g.pt)*100);var total=g.total||(g.val*g.pt);
     return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center"><b>'+emo(g.cat)+' '+escHtml(g.desc)+'</b><div style="display:flex;align-items:center;gap:8px"><span class="tag tprc">'+pg+'/'+g.pt+'</span><button onclick="excluirParcelamento('+k+')" style="background:none;border:none;color:#7b80a0;cursor:pointer;font-size:16px">🗑</button></div></div><div style="font-size:11px;color:#7b80a0;margin-top:4px">'+fmt(g.val)+'/parcela · Total: '+fmt(total)+'</div><div class="pw"><div class="pb" style="width:'+pct+'%;background:#818cf8"></div></div><div style="font-size:11px;color:#7b80a0;margin-top:3px">'+pct+'% concluído</div></div>';
   }).join('');
 }
@@ -2572,11 +2651,14 @@ async function init(){
     migrarDados();
     var _rp=(!db.migParcCSV)?reprocessarParcelasFaturaCSV():null;
     db.migParcCSV=1;
+    var _rc=(!db.migReconcParc)?reconciliarParcelasExistentes():null;
+    db.migReconcParc=1;
     ajustarCicloInicial();
     syncFaturas();
     salvar();
     render();
     if(_rp&&_rp.criados)setTimeout(function(){toast('✓ Reprocessamento: '+_rp.criados+' parcela'+(_rp.criados!==1?'s':'')+' futura'+(_rp.criados!==1?'s':'')+' criada'+(_rp.criados!==1?'s':'')+'.');},900);
+    if(_rc&&(_rc.reconc||_rc.recriadas))setTimeout(function(){toast('✓ Parcelas reconciliadas: '+(_rc.reconc+_rc.recriadas)+' pagamento'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+' vinculado'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+'.');},1400);
     var resizeTimer;
     window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(balanceDash,150);});
   } else {

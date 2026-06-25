@@ -394,6 +394,15 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-fat-drill">
+  <div class="mod">
+    <h3 id="fat-drill-titulo">Fatura</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Total: <b style="color:#f87171" id="fat-drill-total"></b> · somente seus gastos (maiores primeiro)</div>
+    <div id="fat-drill-content" style="max-height:55vh;overflow-y:auto;margin-bottom:14px"></div>
+    <button class="cbtn" onclick="fechar('ov-fat-drill')">Fechar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-cof-rendimento">
   <div class="mod">
     <h3>📈 Atualizar Rendimento</h3>
@@ -463,7 +472,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v96';
+var APP_VERSION = 'v97';
 
 var currentUser = null;
 var accessToken = null;
@@ -608,7 +617,6 @@ var db = {
 
 var curM=new Date().getMonth(), curY=new Date().getFullYear();
 var tipo='e', fixTipo='e', titular='eu';
-var lancFiltro='tudo'; // filtro da lista de Lançamentos: 'tudo' | 'conta' | 'cartao'
 var editLancId=null, editFixGid=null, editOcorrGid=null, editOcorrMk=null;
 var editCCId=null, editCCLancId=null, curCCId=null;
 var confirmCb=null,confirmCb2=null;
@@ -2087,16 +2095,38 @@ function parsearFaturaItau(lines,existingKeys){
 function itemLancHTML(l){
   var isR=l.tipo==='r';var p=l.data.split('-');
   if(l.sub==='fat'){
-    return '<div class="it"><div class="ico" style="background:rgba(129,140,248,.15)">💳</div>'
-      +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+'<span class="tag" style="background:rgba(129,140,248,.2);color:#a78bfa;font-size:9px;margin-left:4px">AUTO</span></div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
+    return '<div class="it" style="cursor:pointer" onclick="abrirDrillFatura('+l.id+')">'
+      +'<div class="ico" style="background:rgba(129,140,248,.15)">💳</div>'
+      +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+'<span class="tag" style="background:rgba(129,140,248,.2);color:#a78bfa;font-size:9px;margin-left:4px">AUTO</span></div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+' · toque para detalhar</div></div>'
       +'<div class="ival" style="color:#f87171">-'+fmt(l.val)+'</div>'
-      +'<div style="width:32px"></div></div>';
+      +'<div style="width:32px;text-align:center;color:#7b80a0;font-size:18px">›</div></div>';
   }
   var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>'+(l.pago?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px" title="Parcela paga (pagamento real reconciliado)">✓ pago</span>':''):l.sub==='imp'?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px">EXT</span>':'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)')+'">'+emo(l.cat)+'</div>'
     +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#34d399':'#f87171')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'
     +'<button class="ebtn" onclick="abrirEditarLanc('+l.id+')">✏️</button></div>';
+}
+function abrirDrillFatura(lancId){
+  var l=db.lancs.find(function(x){return x.id===lancId;});
+  if(!l||l.sub!=='fat')return;
+  var parts=(l.ccMk||'').split('-');var y=+parts[0],m=+parts[1]-1;
+  var gastos=gastosCC(l.ccId,m,y).filter(function(g){return g.titular==='eu';}).sort(function(a,b){return b.val-a.val;});
+  document.getElementById('fat-drill-titulo').textContent=l.desc;
+  document.getElementById('fat-drill-total').textContent=fmt(l.val);
+  var h;
+  if(!gastos.length){h='<div class="empty">Sem compras nesta fatura.</div>';}
+  else{
+    h=gastos.map(function(g){
+      var gp=g.data.split('-');
+      var tag=g.sub==='pa'?'<span class="tag tprc">'+g.pn+'/'+g.pt+'</span>':'';
+      return '<div class="it"><div class="ico" style="background:rgba(248,113,113,.15)">'+emo(g.cat)+'</div>'
+        +'<div class="iinfo"><div class="iname">'+escHtml(g.desc)+tag+'</div><div class="isub">'+escHtml(g.cat)+' · '+gp[2]+'/'+gp[1]+'</div></div>'
+        +'<div class="ival" style="color:#f87171">-'+fmt(g.val)+'</div></div>';
+    }).join('');
+  }
+  document.getElementById('fat-drill-content').innerHTML=h;
+  document.getElementById('ov-fat-drill').classList.add('on');
 }
 function itemFixoMesHTML(f,mk){
   var isR=f.tipo==='r';var dia=f.dia?pad(f.dia)+'/'+mk.split('-')[1]:'—';
@@ -2154,28 +2184,19 @@ function renderDash(){
   document.getElementById('d-cc-card').innerHTML=ccH;
 }
 
-function setLancFiltro(f){lancFiltro=f;renderLancs();}
 function renderLancs(){
   var mk=mesKey(curM,curY);var fixMes=fixosVigentes(curM,curY);
   var list=lancsDoMes(curM,curY).sort(function(a,b){return b.data.localeCompare(a.data);});
-  var f=lancFiltro||'tudo';
-  // Filtro Cartão (fatura, sub='fat') × Conta corrente (avulso/parcela/importado + fixos).
-  if(f==='cartao'){list=list.filter(function(l){return l.sub==='fat';});fixMes=[];}
-  else if(f==='conta'){list=list.filter(function(l){return l.sub!=='fat';});}
-  var seg=function(id,label){var on=f===id;
-    return '<button onclick="setLancFiltro(\''+id+'\')" style="border:2px solid '+(on?'#818cf8':'#2a2f4a')+';background:'+(on?'rgba(129,140,248,.12)':'none')+';color:'+(on?'#a5b4fc':'#7b80a0')+';border-radius:9px;padding:7px 4px;font-size:12px;font-weight:700;cursor:pointer;width:100%">'+label+'</button>';};
-  var h='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">'+seg('tudo','Tudo')+seg('conta','🏦 Conta')+seg('cartao','💳 Cartão')+'</div>';
-  var temConteudo=false;
-  if(fixMes.length){h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';temConteudo=true;}
+  var h='';
+  if(fixMes.length)h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';
   if(list.length){
     var recs=list.filter(function(l){return l.tipo==='r';});var exps=list.filter(function(l){return l.tipo==='e';});
     h+='<div class="card">';
     if(recs.length)h+='<div class="sec">↑ Receitas</div>'+recs.map(itemLancHTML).join('');
     if(exps.length)h+='<div class="sec">↓ Despesas</div>'+exps.map(itemLancHTML).join('');
-    h+='</div>';temConteudo=true;
+    h+='</div>';
   }
-  if(!temConteudo)h+='<div class="empty">'+(f==='cartao'?'Nenhuma fatura de cartão neste mês.':f==='conta'?'Nenhum lançamento de conta neste mês.':'Sem lançamentos neste mês.')+'</div>';
-  document.getElementById('l-list').innerHTML=h;
+  document.getElementById('l-list').innerHTML=h||'<div class="empty">Sem lançamentos neste mês.</div>';
 }
 function renderFixos(){
   var el=document.getElementById('fix-list');

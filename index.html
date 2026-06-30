@@ -463,7 +463,7 @@ var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v98';
+var APP_VERSION = 'v99';
 
 var currentUser = null;
 var accessToken = null;
@@ -1155,7 +1155,7 @@ function mostrarPreviewCSV(text){
   var lines=text.trim().split('\n');
   var existingKeys={},softKeys={},existingParc={};
   db.ccLancs.forEach(function(l){
-    if(l.csvKey)existingKeys[l.csvKey]=true;
+    existingKeys[ccDKey(l.data,l.desc,l.val)]=true;
     var pk=ccParcKey(l);if(pk)existingParc[pk]=true;
     var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
     if(!softKeys[k])softKeys[k]=[];
@@ -1176,8 +1176,8 @@ function mostrarPreviewCSV(text){
     var dataAdj=ajustarDataParcela(lancamento,data);
     var parc=parcelaFatura(lancamento,dataAdj,valor,existingParc,curCCId);
     if(parc.isParcela){
-      if(existingParc[curCCId+'§'+parc.baseDesc+'§'+valor+'§'+parc.pn+'/'+parc.pt]){duplicados++;return;}
-    }else if(existingKeys[key]){duplicados++;return;}
+      if(existingParc[ccParcKeyParts(curCCId,parc.baseDesc,valor,parc.pn,parc.pt)]){duplicados++;return;}
+    }else if(existingKeys[ccDKey(dataAdj,lancamento,valor)]){duplicados++;return;}
     var softDupDescs=(softKeys[dataAdj+'|'+Math.round(valor*100)/100])||null;
     csvImportBuffer.push({data:dataAdj,lancamento:lancamento,valor:valor,csvKey:key,include:!softDupDescs,softDupDescs:softDupDescs||null,cat:autoCatCC(lancamento),titular:'eu',
       isParcela:parc.isParcela,pn:parc.pn,pt:parc.pt,baseDesc:parc.baseDesc,futureDates:parc.futureDates});
@@ -1244,12 +1244,18 @@ function lerFaturaXLSX(file){
   };
   reader.readAsArrayBuffer(file);
 }
+// Normaliza descrição p/ dedup: minúsculas, sem acento, sem espaços extras.
+function dkNorm(s){return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
+// Chave de dedup de lançamento de cartão NÃO-parcelado (data|desc normalizada|valor).
+function ccDKey(data,desc,val){return data+'|'+dkNorm(desc)+'|'+(Math.round(Math.abs(val)*100)/100);}
+// Chave de identidade de parcela (desc normalizada), independente da data.
+function ccParcKeyParts(ccId,base,val,pn,pt){return ccId+'§'+dkNorm(base)+'§'+(Math.round(Math.abs(val)*100)/100)+'§'+pn+'/'+pt;}
 // Identidade de uma parcela de cartão, independente da data (p/ dedup robusto).
 // Reconhece tanto o formato novo (sub='pa' + pn/pt) quanto o antigo (sufixo " I N/T" no desc).
 function ccParcKey(l){
-  if(l.sub==='pa'&&l.pn&&l.pt)return l.ccId+'§'+(l.desc||'')+'§'+l.val+'§'+l.pn+'/'+l.pt;
+  if(l.sub==='pa'&&l.pn&&l.pt)return ccParcKeyParts(l.ccId,l.desc,l.val,l.pn,l.pt);
   var m=(l.desc||'').match(/\sI(\d+)\/(\d+)$/);
-  if(m)return l.ccId+'§'+l.desc.replace(/\sI\d+\/\d+$/,'').trim()+'§'+l.val+'§'+m[1]+'/'+m[2];
+  if(m)return ccParcKeyParts(l.ccId,l.desc.replace(/\sI\d+\/\d+$/,'').trim(),l.val,m[1],m[2]);
   return null;
 }
 // Extrai parcela do lançamento "Desc I N/T" → {pn,pt,base} ou null.
@@ -1268,7 +1274,7 @@ function parcelaFatura(lancamento,data,valor,existingParc,ccId){
   for(var fk=1;fk<=p.pt-p.pn;fk++){
     var fdata=avanca(fy,fm,fd,fk),fpn=p.pn+fk,flanc=p.base+' I'+fpn+'/'+p.pt;
     futuras.push({data:fdata,lancamento:flanc,csvKey:fdata+'|'+flanc+'|'+valor,pn:fpn,pt:p.pt,
-      dup:!!existingParc[ccId+'§'+p.base+'§'+valor+'§'+fpn+'/'+p.pt]});
+      dup:!!existingParc[ccParcKeyParts(ccId,p.base,valor,fpn,p.pt)]});
   }
   return{isParcela:true,pn:p.pn,pt:p.pt,baseDesc:p.base,futureDates:futuras};
 }
@@ -1305,7 +1311,7 @@ function parsearFaturaXLSX(rows){
   if(headerIdx<0){toast('Formato XLSX não reconhecido. Esperado cabeçalho com "Data".');return;}
   var existingKeys={},softKeys={},existingParc={};
   db.ccLancs.forEach(function(l){
-    if(l.csvKey)existingKeys[l.csvKey]=true;
+    existingKeys[ccDKey(l.data,l.desc,l.val)]=true;
     var pk=ccParcKey(l);if(pk)existingParc[pk]=true;
     var k=l.data+'|'+Math.round(Math.abs(l.val)*100)/100;
     if(!softKeys[k])softKeys[k]=[];
@@ -1333,8 +1339,8 @@ function parsearFaturaXLSX(rows){
     var key=data+'|'+lancamento+'|'+val;
     var parc=parcelaFatura(lancamento,data,val,existingParc,curCCId);
     if(parc.isParcela){
-      if(existingParc[curCCId+'§'+parc.baseDesc+'§'+val+'§'+parc.pn+'/'+parc.pt]){duplicados++;return;}
-    }else if(existingKeys[key]){duplicados++;return;}
+      if(existingParc[ccParcKeyParts(curCCId,parc.baseDesc,val,parc.pn,parc.pt)]){duplicados++;return;}
+    }else if(existingKeys[ccDKey(data,lancamento,val)]){duplicados++;return;}
     var softDupDescs=(softKeys[data+'|'+Math.round(val*100)/100])||null;
     csvImportBuffer.push({
       data:data,lancamento:lancamento,valor:val,csvKey:key,
@@ -1433,7 +1439,7 @@ function reprocessarParcelasFaturaCSV(){
     var dp=last.l.data.split('-'),fy=+dp[0],fm=+dp[1],fd=+dp[2];
     for(var p=last.pn+1;p<=g.pt;p++){
       if(temPn[p])continue;
-      var idk=g.ccId+'§'+g.base+'§'+g.val+'§'+p+'/'+g.pt;
+      var idk=ccParcKeyParts(g.ccId,g.base,g.val,p,g.pt);
       if(existId[idk])continue;
       existId[idk]=true;
       var fdata=avanca(fy,fm,fd,p-last.pn);
@@ -1449,6 +1455,22 @@ function reprocessarParcelasFaturaCSV(){
 // Reparo único: liga débitos importados/avulsos soltos às parcelas avulsas
 // correspondentes (marca como paga). Se a parcela do slot estiver faltando
 // (foi apagada na importação), recria-a a partir do débito. Idempotente.
+// Remove lançamentos de cartão duplicados que só diferem por caixa/acento na descrição
+// (ex.: fatura parcial "Mercado*mercadolivre" + fatura final "MERCADO*MERCADOLIVRE").
+// Mantém o primeiro de cada identidade normalizada. Parcelas usam ccParcKey (sem data);
+// demais usam ccDKey (data+desc norm+valor).
+function dedupCCLancsCase(){
+  var seen={},keep=[],removed=0;
+  db.ccLancs.forEach(function(l){
+    var pk=ccParcKey(l);
+    var key=pk?('P§'+pk):('N§'+(l.ccId||'')+'§'+ccDKey(l.data,l.desc,l.val));
+    if(seen[key]){removed++;return;}
+    seen[key]=true;keep.push(l);
+  });
+  if(removed)db.ccLancs=keep;
+  if(removed)log('dedup_cc_case',{removidos:removed});
+  return{removidos:removed};
+}
 function reconciliarParcelasExistentes(){
   var grupos={};
   db.lancs.forEach(function(l){
@@ -1877,7 +1899,7 @@ function confirmarSenhaPDF(){
       for(var _b=0;_b<lines.length;_b+=40){log('pdf_linhas_'+Math.floor(_b/40),{de:_b,linhas:lines.slice(_b,_b+40)});}
       var banco=detectarBancoPDF(lines);
       var existingKeys={};
-      db.ccLancs.forEach(function(l){if(l.csvKey)existingKeys[l.csvKey]=true;});
+      db.ccLancs.forEach(function(l){existingKeys[ccDKey(l.data,l.desc,l.val)]=true;});
       var res=banco==='itau'?parsearFaturaItau(lines,existingKeys):parsearFaturaSantander(lines,existingKeys);
       if(!res.items.length&&!res.dupCount){
         var secEncontrada=lines.some(function(l){return /Detalhamento|Lan[çc]amentos|Transa[çc][õo]es/i.test(l);});
@@ -1985,14 +2007,14 @@ function parsearFaturaSantander(lines,existingKeys){
       origData=data;
       csvKey=data+'|'+desc+'|'+valAbs;
     }
-    if(existingKeys[csvKey]){dupCount++;continue;}
+    if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
     // Parcelas futuras (pn+1 até pt)
     var futureDates=[];
     if(isParcela){
       for(var fk=1;fk<=pt-pn;fk++){
         var fd=billingDate(fk);
         var fcsv=fd+'|'+desc+'|'+valAbs;
-        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[fcsv]});
+        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
       }
     }
     items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
@@ -2068,13 +2090,13 @@ function parsearFaturaItau(lines,existingKeys){
         origData=data;
         csvKey=data+'|'+desc+'|'+valAbs;
       }
-      if(existingKeys[csvKey]){dupCount++;continue;}
+      if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
       var futureDates=[];
       if(isParcela){
         for(var fk=1;fk<=pt-pn;fk++){
           var fd=billingDate(fk);
           var fcsv=fd+'|'+desc+'|'+valAbs;
-          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[fcsv]});
+          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
         }
       }
       items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
@@ -2675,12 +2697,15 @@ async function init(){
     db.migParcCSV=1;
     var _rc=(!db.migReconcParc2)?reconciliarParcelasExistentes():null;
     db.migReconcParc2=1;
+    var _dd=(!db.migDedupCase)?dedupCCLancsCase():null;
+    db.migDedupCase=1;
     ajustarCicloInicial();
     syncFaturas();
     salvar();
     render();
     if(_rp&&_rp.criados)setTimeout(function(){toast('✓ Reprocessamento: '+_rp.criados+' parcela'+(_rp.criados!==1?'s':'')+' futura'+(_rp.criados!==1?'s':'')+' criada'+(_rp.criados!==1?'s':'')+'.');},900);
     if(_rc&&(_rc.reconc||_rc.recriadas))setTimeout(function(){toast('✓ Parcelas reconciliadas: '+(_rc.reconc+_rc.recriadas)+' pagamento'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+' vinculado'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+'.');},1400);
+    if(_dd&&_dd.removidos)setTimeout(function(){toast('✓ '+_dd.removidos+' lançamento'+(_dd.removidos!==1?'s':'')+' de cartão duplicado'+(_dd.removidos!==1?'s':'')+' removido'+(_dd.removidos!==1?'s':'')+'.');},1900);
     var resizeTimer;
     window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(balanceDash,150);});
   } else {

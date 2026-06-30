@@ -186,6 +186,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <button onclick="voltarCartoes()" style="background:#22263a;border:none;color:#e8eaf6;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px">← Voltar</button>
         <span style="font-weight:700;font-size:15px" id="cc-fatura-titulo"></span>
+        <button onclick="conferirFaturaPDF()" style="margin-left:auto;background:#22263a;border:1px solid #3a3f5c;color:#a5b4fc;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px" title="Comparar com o PDF da fatura">🔍 Conferir</button>
       </div>
       <div id="cc-fatura-content"></div>
     </div>
@@ -457,13 +458,21 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-conf-fatura">
+  <div class="mod" style="max-width:520px">
+    <h3>🔍 Conferência da fatura</h3>
+    <div id="conf-fatura-content" style="max-height:65vh;overflow-y:auto"></div>
+    <button class="cbtn" onclick="fechar('ov-conf-fatura')">Fechar</button>
+  </div>
+</div>
+
 <script>
 // ── SUPABASE CONFIG ──────────────────────────────────────
 var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-var APP_VERSION = 'v99';
+var APP_VERSION = 'v100';
 
 var currentUser = null;
 var accessToken = null;
@@ -1135,6 +1144,7 @@ document.getElementById('cc-import-input').addEventListener('change',function(e)
   var file=e.target.files[0];if(!file)return;
   fechar('ov-import-select');
   var ext=file.name.split('.').pop().toLowerCase();
+  if(conferindoFatura&&ext!=='pdf'){conferindoFatura=false;toast('Conferência disponível só para PDF.');return;}
   if(ext==='pdf'){
     pdfFaturaFile=file;
     var sel=document.getElementById('pdf-card-sel');
@@ -1512,6 +1522,91 @@ var fixosParaSuprimir=[];
 var importModo='extrato'; // 'extrato' | 'fatura'
 var fatCCId=null;
 var pdfFaturaFile=null;
+var conferindoFatura=false;
+// Conferência: compara o PDF da fatura com os gastos já lançados no cartão
+// para o ciclo exibido (curCCId/curM/curY). Reusa o fluxo de senha do PDF.
+function conferirFaturaPDF(){
+  if(!curCCId){toast('Abra um cartão primeiro.');return;}
+  conferindoFatura=true;
+  var sel=document.getElementById('pdf-card-sel');
+  sel.innerHTML=db.cartoes.map(function(cc){return'<option value="'+cc.id+'"'+(cc.id===curCCId?' selected':'')+'>'+escHtml(cc.nome)+'</option>';}).join('');
+  pdfFaturaFile=null;
+  document.getElementById('cc-import-input').value='';
+  document.getElementById('cc-import-input').click();
+}
+var confFatItems=null,confCcId=null,confLastFalt=[];
+function conferirFaturaDiff(fatItems,ccId){
+  confFatItems=fatItems;confCcId=ccId;
+  renderConfDiff();
+  document.getElementById('ov-conf-fatura').classList.add('on');
+  log('conf_fatura',{ccId:ccId,m:curM,y:curY,nFat:fatItems.length});
+}
+function renderConfDiff(){
+  var ccId=confCcId,m=curM,y=curY;
+  var cc=db.cartoes.find(function(c){return c.id===ccId;});
+  var site=gastosCC(ccId,m,y);
+  // Casa por descrição normalizada + valor (multiconjunto): consome 1 do site por item da fatura.
+  var bucket={};
+  site.forEach(function(l){var k=dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100);(bucket[k]=bucket[k]||[]).push(l);});
+  var faltando=[];
+  confFatItems.forEach(function(it){
+    var k=dkNorm(it.desc)+'|'+Math.round(Math.abs(it.val)*100);
+    if(bucket[k]&&bucket[k].length)bucket[k].shift();
+    else faltando.push(it);
+  });
+  var sobrando=[];
+  Object.keys(bucket).forEach(function(k){bucket[k].forEach(function(l){sobrando.push(l);});});
+  confLastFalt=faltando;
+  var totFat=confFatItems.reduce(function(s,it){return s+Math.abs(it.val);},0);
+  var totSite=site.reduce(function(s,l){return s+Math.abs(l.val);},0);
+  var diff=totSite-totFat;
+  var per=pad(periodoFatura(cc,m,y).ini.getDate())+'/'+pad(periodoFatura(cc,m,y).ini.getMonth()+1)+' a '+pad(periodoFatura(cc,m,y).fim.getDate())+'/'+pad(periodoFatura(cc,m,y).fim.getMonth()+1);
+  var h='<div style="font-size:12px;color:#7b80a0;margin-bottom:10px">💳 '+escHtml(cc.nome)+' · '+MESES[m]+'/'+y+' ('+per+')</div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px">'
+    +'<div style="flex:1;background:#22263a;border-radius:8px;padding:8px"><div style="font-size:10px;color:#7b80a0">Fatura (PDF)</div><div style="font-size:15px;font-weight:700">'+fmt(totFat)+'</div><div style="font-size:10px;color:#7b80a0">'+confFatItems.length+' itens</div></div>'
+    +'<div style="flex:1;background:#22263a;border-radius:8px;padding:8px"><div style="font-size:10px;color:#7b80a0">No site</div><div style="font-size:15px;font-weight:700">'+fmt(totSite)+'</div><div style="font-size:10px;color:#7b80a0">'+site.length+' itens</div></div>'
+    +'<div style="flex:1;background:'+(Math.abs(diff)<0.01?'rgba(52,211,153,.12)':'rgba(248,113,113,.12)')+';border-radius:8px;padding:8px"><div style="font-size:10px;color:#7b80a0">Diferença</div><div style="font-size:15px;font-weight:700;color:'+(Math.abs(diff)<0.01?'#34d399':'#f87171')+'">'+(diff>=0?'+':'-')+fmt(Math.abs(diff))+'</div></div>'
+    +'</div>';
+  if(!faltando.length&&!sobrando.length){
+    h+='<div style="background:rgba(52,211,153,.12);border-radius:8px;padding:14px;text-align:center;color:#34d399;font-weight:600">✓ Tudo confere! A fatura bate com os lançamentos.</div>';
+  }
+  if(faltando.length){
+    h+='<div style="margin-bottom:6px;font-size:12px;font-weight:700;color:#fbbf24">⬇ Na fatura, faltando no site ('+faltando.length+')</div>';
+    faltando.forEach(function(it,i){
+      var dp=it.data.split('-');var pt=it.isParcela?' <span class="tag tprc">'+it.pn+'/'+it.pt+'</span>':'';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:5px">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(it.desc)+pt+'</div><div style="font-size:10px;color:#7b80a0">'+escHtml(it.cat||'')+' · '+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
+        +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(it.val)+'</div>'
+        +'<button onclick="confAddFaltante('+i+')" style="background:rgba(129,140,248,.2);color:#a5b4fc;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">+ Adicionar</button>'
+        +'</div>';
+    });
+  }
+  if(sobrando.length){
+    h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:#f87171">⬆ No site, não está na fatura ('+sobrando.length+')</div>';
+    sobrando.forEach(function(l){
+      var dp=l.data.split('-');var pt=l.sub==='pa'?' <span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var tf=l.titular==='fam'?' 👥':'';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:5px">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(l.desc)+pt+tf+'</div><div style="font-size:10px;color:#7b80a0">'+escHtml(l.cat||'')+' · '+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
+        +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(l.val)+'</div>'
+        +'<button onclick="confDelSobrando('+l.id+')" style="background:rgba(248,113,113,.2);color:#f87171;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">Remover</button>'
+        +'</div>';
+    });
+  }
+  document.getElementById('conf-fatura-content').innerHTML=h;
+}
+function confAddFaltante(i){
+  var it=confLastFalt[i];if(!it)return;
+  var nl={id:db.nid++,ccId:confCcId,desc:it.desc,val:it.val,data:it.data,cat:it.cat,titular:'eu',csvKey:it.csvKey};
+  if(it.isParcela){nl.sub='pa';nl.pn=it.pn;nl.pt=it.pt;}else{nl.sub='av';}
+  db.ccLancs.push(nl);
+  log('conf_add',{ccId:confCcId,desc:it.desc,val:it.val});
+  syncFaturas();salvar();renderConfDiff();renderFatura(curCCId);
+}
+function confDelSobrando(id){
+  db.ccLancs=db.ccLancs.filter(function(x){return x.id!==id;});
+  log('conf_del',{id:id});
+  syncFaturas();salvar();renderConfDiff();renderFatura(curCCId);
+}
 function autoCatExtrato(desc,tipo){
   var d=desc.toUpperCase();
   if(tipo==='r'){
@@ -1898,15 +1993,18 @@ function confirmarSenhaPDF(){
       lines.forEach(function(l,i){console.log('['+i+']',l);});
       for(var _b=0;_b<lines.length;_b+=40){log('pdf_linhas_'+Math.floor(_b/40),{de:_b,linhas:lines.slice(_b,_b+40)});}
       var banco=detectarBancoPDF(lines);
+      // Em conferência, não deduplica: queremos a fatura inteira p/ comparar.
       var existingKeys={};
-      db.ccLancs.forEach(function(l){existingKeys[ccDKey(l.data,l.desc,l.val)]=true;});
+      if(!conferindoFatura)db.ccLancs.forEach(function(l){existingKeys[ccDKey(l.data,l.desc,l.val)]=true;});
       var res=banco==='itau'?parsearFaturaItau(lines,existingKeys):parsearFaturaSantander(lines,existingKeys);
       if(!res.items.length&&!res.dupCount){
         var secEncontrada=lines.some(function(l){return /Detalhamento|Lan[çc]amentos|Transa[çc][õo]es/i.test(l);});
         toast('Nenhum registro encontrado. '+(secEncontrada?'Seção encontrada mas sem transações.':'Seção de lançamentos não localizada no PDF.'));
         log('pdf_parse_vazio',{banco:banco,secEncontrada:secEncontrada,linhas:lines.length});
+        conferindoFatura=false;
         return;
       }
+      if(conferindoFatura){conferindoFatura=false;conferirFaturaDiff(res.items,fatCCId);return;}
       importModo='fatura';
       extratoImportBuffer=res.items;
       extratoImportBuffer.sort(function(a,b){return a.data.localeCompare(b.data);});

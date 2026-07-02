@@ -494,7 +494,10 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab';
+var APP_VERSION = 'v100-lab · build 6';
+// Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
+// para confirmar que a página carregou a versão mais recente.
+try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
 
 var currentUser = null;
 var accessToken = null;

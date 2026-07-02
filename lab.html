@@ -1742,9 +1742,21 @@ async function sincronizarBanco(){
 }
 function mostrarPreviewSync(data){
   var h='<div style="background:rgba(124,58,237,.12);border:1px solid #7c3aed;border-radius:8px;padding:8px;font-size:11px;color:#c4b5fd;margin-bottom:10px">Fase de validação — <b>nada foi mesclado</b> nos seus lançamentos. Só estou mostrando o que a Pluggy retornou.</div>';
-  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões)</div>';
+  var it=data.item;
+  if(it){
+    var st=it.status||'?';var stCor=(st==='UPDATED')?'#34d399':(st==='UPDATING'||it.executionStatus==='CREATED')?'#fbbf24':'#f87171';
+    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:8px;font-size:11px">Item: <b style="color:'+stCor+'">'+escHtml(st)+'</b>'
+      +(it.executionStatus?' · exec: '+escHtml(it.executionStatus):'')
+      +(it.connector?' · '+escHtml(it.connector):'')
+      +(it.lastUpdatedAt?'<br>Atualizado: '+escHtml(String(it.lastUpdatedAt)):'')
+      +(it.error?'<br><span style="color:#f87171">Erro: '+escHtml(JSON.stringify(it.error))+'</span>':'')
+      +'</div>';
+    if(st==='UPDATING'||it.executionStatus==='CREATED'||it.executionStatus==='UPDATING')
+      h+='<div style="font-size:11px;color:#fbbf24;margin-bottom:8px">⏳ O item ainda está sincronizando na Pluggy. Aguarde alguns segundos e clique em Sincronizar de novo.</div>';
+  }
+  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · janela '+escHtml(data.from||'')+' a '+escHtml(data.to||'')+'</div>';
   (data.accounts||[]).forEach(function(a){
-    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:6px"><div style="font-size:13px;font-weight:700">'+escHtml(a.name||a.type||'Conta')+' <span style="font-size:10px;color:#7b80a0">('+escHtml(a.type||'')+(a.subtype?'/'+escHtml(a.subtype):'')+')</span></div><div style="font-size:11px;color:#7b80a0">Saldo: '+(a.balance!=null?fmt(a.balance):'—')+' '+escHtml(a.currencyCode||'')+'</div></div>';
+    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:6px"><div style="font-size:13px;font-weight:700">'+escHtml(a.name||a.type||'Conta')+' <span style="font-size:10px;color:#7b80a0">('+escHtml(a.type||'')+(a.subtype?'/'+escHtml(a.subtype):'')+') · '+(a.txCount!=null?a.txCount:'?')+' tx</span></div><div style="font-size:11px;color:#7b80a0">Saldo: '+(a.balance!=null?fmt(a.balance):'—')+' '+escHtml(a.currencyCode||'')+'</div></div>';
   });
   var txs=(data.transactions||[]).slice().sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
   h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">Transações (mais recentes primeiro)</div>';

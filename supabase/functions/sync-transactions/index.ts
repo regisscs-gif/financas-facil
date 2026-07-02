@@ -60,12 +60,31 @@ Deno.serve(async (req: Request) => {
   if (!itemId) return json({ error: "itemId é obrigatório." }, 400);
   if (!from) {
     const d = new Date();
-    d.setDate(d.getDate() - 90);
+    d.setDate(d.getDate() - 730); // janela ampla (2 anos) p/ não perder dados de sandbox
     from = d.toISOString().slice(0, 10);
   }
+  const to = new Date();
+  to.setDate(to.getDate() + 1); // inclui hoje/futuro imediato
+  const toStr = to.toISOString().slice(0, 10);
 
   try {
     const apiKey = await pluggyAuth(clientId, clientSecret);
+
+    // Status do item (diagnóstico: UPDATING/UPDATED/erro)
+    let item: any = null;
+    try {
+      const it = await getJson(`${PLUGGY_BASE}/items/${encodeURIComponent(itemId)}`, apiKey);
+      item = {
+        id: it.id,
+        status: it.status,
+        executionStatus: it.executionStatus,
+        lastUpdatedAt: it.lastUpdatedAt,
+        connector: it.connector?.name,
+        error: it.error ?? null,
+      };
+    } catch (e) {
+      item = { error: String((e as Error).message) };
+    }
 
     // Contas do item
     const accResp = await getJson(`${PLUGGY_BASE}/accounts?itemId=${encodeURIComponent(itemId)}`, apiKey);
@@ -77,6 +96,7 @@ Deno.serve(async (req: Request) => {
       number: a.number,
       balance: a.balance,
       currencyCode: a.currencyCode,
+      txCount: 0,
     }));
 
     // Transações por conta (paginado)
@@ -85,10 +105,11 @@ Deno.serve(async (req: Request) => {
       let page = 1;
       let totalPages = 1;
       do {
-        const url = `${PLUGGY_BASE}/transactions?accountId=${encodeURIComponent(acc.id)}&from=${from}&pageSize=500&page=${page}`;
+        const url = `${PLUGGY_BASE}/transactions?accountId=${encodeURIComponent(acc.id)}&from=${from}&to=${toStr}&pageSize=500&page=${page}`;
         const tResp = await getJson(url, apiKey);
         totalPages = tResp.totalPages ?? 1;
         for (const t of (tResp.results ?? [])) {
+          acc.txCount++;
           transactions.push({
             id: t.id,
             accountId: acc.id,
@@ -107,10 +128,12 @@ Deno.serve(async (req: Request) => {
     }
 
     return json({
+      item,
       accounts,
       transactions,
       counts: { accounts: accounts.length, transactions: transactions.length },
       from,
+      to: toStr,
     });
   } catch (e) {
     return json({ error: "Falha ao sincronizar", detail: String((e as Error).message) }, 502);

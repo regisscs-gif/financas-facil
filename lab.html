@@ -479,7 +479,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 
 <div class="ov" id="ov-sync">
   <div class="mod" style="max-width:560px">
-    <h3>🔄 Transações da Pluggy (preview)</h3>
+    <h3>🔄 Sincronizar — revisar e mesclar</h3>
     <div id="sync-content" style="max-height:65vh;overflow-y:auto"></div>
     <button class="cbtn" onclick="fechar('ov-sync')">Fechar</button>
   </div>
@@ -496,7 +496,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 10';
+var APP_VERSION = 'v100-lab · build 11';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1778,44 +1778,124 @@ async function sincronizarBanco(){
     toast('Erro ao sincronizar: '+((dd&&(dd.detail||dd.error))||e.message||'desconhecido'));
   }
 }
-function mostrarPreviewSync(data){
-  var h='<div style="background:rgba(124,58,237,.12);border:1px solid #7c3aed;border-radius:8px;padding:8px;font-size:11px;color:#c4b5fd;margin-bottom:10px">Fase de validação — <b>nada foi mesclado</b> nos seus lançamentos. Só estou mostrando o que a Pluggy retornou.</div>';
-  var it=data.item;
-  if(it){
-    var st=it.status||'?';var stCor=(st==='UPDATED')?'#34d399':(st==='UPDATING'||it.executionStatus==='CREATED')?'#fbbf24':'#f87171';
-    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:8px;font-size:11px">Item: <b style="color:'+stCor+'">'+escHtml(st)+'</b>'
-      +(it.executionStatus?' · exec: '+escHtml(it.executionStatus):'')
-      +(it.connector?' · '+escHtml(it.connector):'')
-      +(it.lastUpdatedAt?'<br>Atualizado: '+escHtml(String(it.lastUpdatedAt)):'')
-      +(it.error?'<br><span style="color:#f87171">Erro: '+escHtml(JSON.stringify(it.error))+'</span>':'')
-      +'</div>';
-    if(st==='UPDATING'||it.executionStatus==='CREATED'||it.executionStatus==='UPDATING')
-      h+='<div style="font-size:11px;color:#fbbf24;margin-bottom:8px">⏳ O item ainda está sincronizando na Pluggy. Aguarde alguns segundos e clique em Sincronizar de novo.</div>';
-    if(it.error&&/not.?found|404|ITEM_NOT_FOUND/i.test(JSON.stringify(it.error)))
-      h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado na Pluggy (conexão inválida/expirada). Clique em <b>🧹 Limpar conexões</b> e depois <b>🔗 Conectar banco</b> de novo — use o sandbox <b>"Pluggy Bank"</b> (usuário <code>user-ok</code>, senha <code>password-ok</code>).</div>';
+// ── Mapeamento Pluggy → modelo do app (validado em pluggy/merge-test.js) ──
+var syncData=null,syncCands=[],syncSkipped=0;
+function mapCatPluggy(plCat,desc,tipo){
+  var c=(plCat||'').toLowerCase();
+  if(tipo==='r'){
+    if(/salary|paycheck|payroll|retirement|pension/.test(c))return 'Salário';
+    if(/invest|interest|dividend|yield/.test(c))return 'Investimentos';
+    if(/freelanc|self-?employ/.test(c))return 'Freelance';
+    return 'Outros';
   }
-  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões)</div>';
-  (data.accounts||[]).forEach(function(a){
-    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:6px"><div style="font-size:13px;font-weight:700">'+escHtml(a.name||a.type||'Conta')+' <span style="font-size:10px;color:#7b80a0">('+escHtml(a.type||'')+(a.subtype?'/'+escHtml(a.subtype):'')+') · '+(a.txCount!=null?a.txCount:'?')+' tx</span></div><div style="font-size:11px;color:#7b80a0">Saldo: '+(a.balance!=null?fmt(a.balance):'—')+' '+escHtml(a.currencyCode||'')+'</div></div>';
+  if(/rent|mortgage|housing|condomin|real estate|home/.test(c))return 'Moradia';
+  if(/electric|water|gas bill|utilit|telecom|internet|phone|mobile|cable/.test(c))return 'Moradia';
+  if(/food|drink|restaurant|supermarket|grocer|bar|coffee|fast food/.test(c))return 'Alimentação';
+  if(/transport|fuel|gas station|taxi|ride|uber|parking|toll|mobility|public transport/.test(c))return 'Transporte';
+  if(/health|pharmac|doctor|hospital|dentist|medical|gym|fitness/.test(c))return 'Saúde';
+  if(/stream|entertain|movie|game|leisure|travel|hotel|music|video|hobby/.test(c))return 'Lazer';
+  if(/educat|school|course|book|tuition/.test(c))return 'Educação';
+  if(/cloth|apparel|shoe|fashion/.test(c))return 'Vestuário';
+  return 'Outros';
+}
+function isCardPaymentPl(cat,desc){
+  var s=((cat||'')+' '+(desc||'')).toLowerCase();
+  return /credit card payment|pagamento.*fatura|fatura.*cart|pagto.*cart/.test(s);
+}
+function buildSyncCandidates(data,existing){
+  var out=[],skipped=0;
+  (data.transactions||[]).forEach(function(t){
+    if(t.plId&&existing[t.plId]){skipped++;return;}
+    var val=Math.abs(t.amount);
+    if(t.accountType==='CREDIT'){
+      var flag=(t.amount>0)?'card_credit':null;
+      out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
+        cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',
+        installment:(t.installment&&t.installment.total>1)?t.installment:null,
+        plId:t.plId,flag:flag,checked:!flag});
+    }else{
+      var tipo=(t.amount<0)?'e':'r';
+      var f=isCardPaymentPl(t.category,t.description)?'card_payment':null;
+      out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
+        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,checked:!f});
+    }
   });
-  var txs=(data.transactions||[]).slice().sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
-  h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">Transações (mais recentes primeiro)</div>';
-  if(!txs.length)h+='<div style="font-size:12px;color:#7b80a0">Nenhuma transação retornada. Se o item estiver UPDATED e mesmo assim vier vazio, me avise.</div>';
-  txs.slice(0,200).forEach(function(t){
-    var dp=(t.date||'').split('-');var dlabel=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(t.date||'');
-    var neg=(t.amount<0); // sinal do amount = direção (type é inconsistente em cartão)
-    var cor=neg?'#f87171':'#34d399';
-    var pinfo=(t.installment&&t.installment.total)?(' '+t.installment.n+'/'+t.installment.total):'';
-    var acctag=(t.accountType==='CREDIT')?' 💳':'';
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
-      +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(t.description||'—')+pinfo+acctag+'</div>'
-      +'<div style="font-size:10px;color:#7b80a0">'+dlabel+' · '+escHtml(t.category||'sem categoria')+'</div></div>'
-      +'<div style="font-size:13px;font-weight:700;color:'+cor+'">'+(neg?'-':'+')+fmt(Math.abs(t.amount||0))+'</div>'
-      +'</div>';
-  });
-  if(txs.length>200)h+='<div style="font-size:11px;color:#7b80a0;margin-top:6px">… e mais '+(txs.length-200)+' (mostrando as 200 primeiras).</div>';
-  document.getElementById('sync-content').innerHTML=h;
+  return {candidates:out,skipped:skipped};
+}
+function mostrarPreviewSync(data){
+  syncData=data;
+  var existing={};
+  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;});
+  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;});
+  var r=buildSyncCandidates(data,existing);
+  syncCands=r.candidates;syncSkipped=r.skipped;
+  renderSyncPreview();
   document.getElementById('ov-sync').classList.add('on');
+}
+function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
+function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
+function renderSyncPreview(){
+  var data=syncData,it=data.item,h='';
+  if(it){
+    var st=it.status||'?';var stCor=(st==='UPDATED')?'#34d399':(st==='UPDATING')?'#fbbf24':'#f87171';
+    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:8px;font-size:11px">Item: <b style="color:'+stCor+'">'+escHtml(st)+'</b>'
+      +(it.connector?' · '+escHtml(it.connector):'')+'</div>';
+    if(it.error&&/not.?found|404|ITEM_NOT_FOUND/i.test(JSON.stringify(it.error)))
+      h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado. Use 🧹 Limpar conexões e reconecte com "Pluggy Bank".</div>';
+  }
+  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · '+syncSkipped+' já no app (ignoradas)</div>';
+  var groups=[{t:'lancs',label:'🏦 Conta corrente → Lançamentos'},{t:'cc',label:'💳 Cartão → Fatura'}];
+  groups.forEach(function(g){
+    var list=[];syncCands.forEach(function(c,i){if(c.target===g.t){c._i=i;list.push(c);}});
+    if(!list.length)return;
+    list.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+    h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">'+g.label+' ('+list.length+')</div>';
+    list.forEach(function(c){
+      var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(c.data||'');
+      var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
+      var pinfo=(c.installment&&c.installment.total)?(' <span class="tag tprc">'+c.installment.n+'/'+c.installment.total+'</span>'):'';
+      var nota=flagNota(c.flag);
+      h+='<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px;cursor:pointer">'
+        +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
+        +'<div style="font-size:10px;color:#7b80a0">'+dl+' · '+escHtml(c.cat||'')+(nota?' · <span style="color:#fbbf24">'+nota+'</span>':'')+'</div></div>'
+        +'<div style="font-size:13px;font-weight:700;color:'+cor+'">'+(isR?'+':'-')+fmt(c.val)+'</div>'
+        +'</label>';
+    });
+  });
+  if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';
+  var nCheck=syncCands.filter(function(c){return c.checked;}).length;
+  h+='<button class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
+  document.getElementById('sync-content').innerHTML=h;
+}
+function confirmarMergeSync(){
+  var cands=syncCands.filter(function(c){return c.checked;});
+  if(!cands.length){toast('Nada selecionado.');return;}
+  if(!db.pluggyCards)db.pluggyCards={};
+  // Resolve cada conta CREDIT da Pluggy → um cartão do app (cria se faltar).
+  (syncData.accounts||[]).forEach(function(a){
+    if(a.type!=='CREDIT')return;
+    var ccId=db.pluggyCards[a.id];
+    if(ccId&&db.cartoes.some(function(c){return c.id===ccId;}))return;
+    var nc={id:db.nid++,nome:a.name||'Cartão Pluggy',limite:0,fecha:1,vence:10};
+    db.cartoes.push(nc);db.pluggyCards[a.id]=nc.id;
+  });
+  var addL=0,addC=0;
+  cands.forEach(function(c){
+    if(c.target==='lancs'){
+      db.lancs.push({id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addL++;
+    }else{
+      var ccId=db.pluggyCards[c.accountId];
+      var o={id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val};
+      if(c.installment&&c.installment.total>1){o.sub='pa';o.pn=c.installment.n;o.pt=c.installment.total;o.pid='pl'+ccId+'§'+c.desc+'§'+c.installment.total;}
+      else o.sub='av';
+      db.ccLancs.push(o);addC++;
+    }
+  });
+  log('pluggy_merge',{lancs:addL,cc:addC});
+  syncFaturas();salvar();render();
+  fechar('ov-sync');
+  toast('✓ Mesclado: '+addL+' em conta corrente + '+addC+' no cartão.');
 }
 // Copia os dados de PRODUÇÃO (tabela 'financas', somente-leitura) para o LAB
 // (tabela financas_lab). Nunca escreve em produção.

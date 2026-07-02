@@ -111,7 +111,7 @@ Deno.serve(async (req: Request) => {
           acc.txCount++;
           const cc = t.creditCardMetadata || null;
           transactions.push({
-            id: t.id,
+            plId: t.id,                     // id estável da Pluggy (dedup)
             accountId: acc.id,
             accountType: acc.type,          // BANK | CREDIT
             date: d,

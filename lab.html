@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 13';
+var APP_VERSION = 'v100-lab · build 14';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1816,24 +1816,26 @@ function isCardPaymentPl(cat,desc){
   var s=((cat||'')+' '+(desc||'')).toLowerCase();
   return /credit card payment|pagamento.*fatura|fatura.*cart|pagto.*cart/.test(s);
 }
-function buildSyncCandidates(data,existing){
+function syncDupKey(data,desc,val){return data+'|'+dkNorm(desc)+'|'+(Math.round(Math.abs(val)*100)/100);}
+function buildSyncCandidates(data,existing,existKeys){
   var out=[],skipped=0;
   (data.transactions||[]).forEach(function(t){
-    if(t.plId&&existing[t.plId]){skipped++;return;}
+    if(t.plId&&existing[t.plId]){skipped++;return;} // já mesclado antes (mesmo plId)
     var val=Math.abs(t.amount);
+    var jaExiste=existKeys&&existKeys[syncDupKey(t.date,t.description,val)]; // igual a um lançamento existente
     if(t.accountType==='CREDIT'){
       // No cartão o sinal do amount é inconsistente (sandbox vs real), então NÃO
       // é usado p/ direção: tudo é gasto, exceto pagamento/estorno por palavra-chave.
       var s=((t.category||'')+' '+(t.description||'')).toLowerCase();
       var isPay=isCardPaymentPl(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s);
-      var flag=isPay?'card_credit':null;
+      var flag=jaExiste?'ja_existe':(isPay?'card_credit':null);
       out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
         cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',
         installment:(t.installment&&t.installment.total>1)?t.installment:null,
         plId:t.plId,flag:flag,checked:!flag});
     }else{
       var tipo=(t.amount<0)?'e':'r';
-      var f=isCardPaymentPl(t.category,t.description)?'card_payment':null;
+      var f=jaExiste?'ja_existe':(isCardPaymentPl(t.category,t.description)?'card_payment':null);
       out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
         cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,checked:!f});
     }
@@ -1842,16 +1844,23 @@ function buildSyncCandidates(data,existing){
 }
 function mostrarPreviewSync(data){
   syncData=data;
-  var existing={};
-  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;});
-  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;});
-  var r=buildSyncCandidates(data,existing);
+  var existing={},existKeys={};
+  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
+  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
+  var r=buildSyncCandidates(data,existing,existKeys);
   syncCands=r.candidates;syncSkipped=r.skipped;
   renderSyncPreview();
   document.getElementById('ov-sync').classList.add('on');
 }
 function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
-function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
+function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
+function setSyncTit(i,v){if(syncCands[i])syncCands[i].titular=v;}
+function syncCatOpts(c){
+  var isR=(c.tipo==='r');var cats=(isR?(db.catsR||[]):(db.catsE||[])).slice();
+  if(c.cat&&cats.indexOf(c.cat)<0)cats.unshift(c.cat);
+  return cats.map(function(x){return '<option'+(x===c.cat?' selected':'')+'>'+escHtml(x)+'</option>';}).join('');
+}
+function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':f==='ja_existe'?'provável duplicata (já existe no app)':'';}
 function renderSyncPreview(){
   var data=syncData,it=data.item,h='';
   if(it){
@@ -1873,12 +1882,20 @@ function renderSyncPreview(){
       var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
       var pinfo=(c.installment&&c.installment.total)?(' <span class="tag tprc">'+c.installment.n+'/'+c.installment.total+'</span>'):'';
       var nota=flagNota(c.flag);
-      h+='<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px;cursor:pointer">'
-        +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px">'
-        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
-        +'<div style="font-size:10px;color:#7b80a0">'+dl+' · '+escHtml(c.cat||'')+(nota?' · <span style="color:#fbbf24">'+nota+'</span>':'')+'</div></div>'
-        +'<div style="font-size:13px;font-weight:700;color:'+cor+'">'+(isR?'+':'-')+fmt(c.val)+'</div>'
-        +'</label>';
+      var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
+      h+='<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
+        +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
+          +'<div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
+          +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+(isR?'+':'-')+fmt(c.val)+'</div>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;flex-wrap:wrap">'
+          +'<span style="font-size:10px;color:#7b80a0">'+dl+'</span>'
+          +'<select onchange="setSyncCat('+c._i+',this.value)" style="'+selSt+'">'+syncCatOpts(c)+'</select>'
+          +(c.target==='cc'?('<select onchange="setSyncTit('+c._i+',this.value)" style="'+selSt+'"><option value="eu"'+(c.titular!=='fam'?' selected':'')+'>👤 Eu</option><option value="fam"'+(c.titular==='fam'?' selected':'')+'>👥 Família</option></select>'):'')
+          +(nota?'<span style="font-size:10px;color:#fbbf24">'+nota+'</span>':'')
+        +'</div>'
+      +'</div>';
     });
   });
   if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';

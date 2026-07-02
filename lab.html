@@ -495,7 +495,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 8';
+var APP_VERSION = 'v100-lab · build 9';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1783,20 +1783,22 @@ function mostrarPreviewSync(data){
     if(it.error&&/not.?found|404|ITEM_NOT_FOUND/i.test(JSON.stringify(it.error)))
       h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado na Pluggy (conexão inválida/expirada). Clique em <b>🧹 Limpar conexões</b> e depois <b>🔗 Conectar banco</b> de novo — use o sandbox <b>"Pluggy Bank"</b> (usuário <code>user-ok</code>, senha <code>password-ok</code>).</div>';
   }
-  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · janela '+escHtml(data.from||'')+' a '+escHtml(data.to||'')+'</div>';
+  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões)</div>';
   (data.accounts||[]).forEach(function(a){
     h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:6px"><div style="font-size:13px;font-weight:700">'+escHtml(a.name||a.type||'Conta')+' <span style="font-size:10px;color:#7b80a0">('+escHtml(a.type||'')+(a.subtype?'/'+escHtml(a.subtype):'')+') · '+(a.txCount!=null?a.txCount:'?')+' tx</span></div><div style="font-size:11px;color:#7b80a0">Saldo: '+(a.balance!=null?fmt(a.balance):'—')+' '+escHtml(a.currencyCode||'')+'</div></div>';
   });
   var txs=(data.transactions||[]).slice().sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
   h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">Transações (mais recentes primeiro)</div>';
-  if(!txs.length)h+='<div style="font-size:12px;color:#7b80a0">Nenhuma transação no período (últimos 90 dias). O item pode ainda estar sincronizando na Pluggy.</div>';
+  if(!txs.length)h+='<div style="font-size:12px;color:#7b80a0">Nenhuma transação retornada. Se o item estiver UPDATED e mesmo assim vier vazio, me avise.</div>';
   txs.slice(0,200).forEach(function(t){
     var dp=(t.date||'').split('-');var dlabel=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(t.date||'');
-    var neg=(t.amount<0)||t.type==='DEBIT';
+    var neg=(t.amount<0); // sinal do amount = direção (type é inconsistente em cartão)
     var cor=neg?'#f87171':'#34d399';
+    var pinfo=(t.installment&&t.installment.total)?(' '+t.installment.n+'/'+t.installment.total):'';
+    var acctag=(t.accountType==='CREDIT')?' 💳':'';
     h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
-      +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(t.description||t.descriptionRaw||'—')+'</div>'
-      +'<div style="font-size:10px;color:#7b80a0">'+dlabel+' · '+escHtml(t.category||'sem categoria')+' · '+escHtml(t.type||'')+'</div></div>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(t.description||'—')+pinfo+acctag+'</div>'
+      +'<div style="font-size:10px;color:#7b80a0">'+dlabel+' · '+escHtml(t.category||'sem categoria')+'</div></div>'
       +'<div style="font-size:13px;font-weight:700;color:'+cor+'">'+(neg?'-':'+')+fmt(Math.abs(t.amount||0))+'</div>'
       +'</div>';
   });

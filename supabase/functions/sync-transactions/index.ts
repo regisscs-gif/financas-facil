@@ -58,14 +58,6 @@ Deno.serve(async (req: Request) => {
     from = String(body?.from ?? "");
   } catch (_) { /* ignore */ }
   if (!itemId) return json({ error: "itemId é obrigatório." }, 400);
-  if (!from) {
-    const d = new Date();
-    d.setDate(d.getDate() - 730); // janela ampla (2 anos) p/ não perder dados de sandbox
-    from = d.toISOString().slice(0, 10);
-  }
-  const to = new Date();
-  to.setDate(to.getDate() + 1); // inclui hoje/futuro imediato
-  const toStr = to.toISOString().slice(0, 10);
 
   try {
     const apiKey = await pluggyAuth(clientId, clientSecret);
@@ -99,32 +91,37 @@ Deno.serve(async (req: Request) => {
       txCount: 0,
     }));
 
-    // Transações por conta (paginado)
+    // Transações por conta — GET /v2/transactions com paginação por cursor (`next`).
+    // Regra de sinal: amount < 0 = saída/despesa; amount > 0 = entrada/receita
+    // (o campo `type` é inconsistente em cartão, então NÃO é usado p/ direção).
     const transactions: any[] = [];
     for (const acc of accounts) {
-      let page = 1;
-      let totalPages = 1;
+      let cursor: string | null = null;
+      let guard = 0;
       do {
-        const url = `${PLUGGY_BASE}/transactions?accountId=${encodeURIComponent(acc.id)}&from=${from}&to=${toStr}&pageSize=500&page=${page}`;
+        const url = `${PLUGGY_BASE}/v2/transactions?accountId=${encodeURIComponent(acc.id)}` +
+          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
         const tResp = await getJson(url, apiKey);
-        totalPages = tResp.totalPages ?? 1;
         for (const t of (tResp.results ?? [])) {
           acc.txCount++;
+          const cc = t.creditCardMetadata || null;
           transactions.push({
             id: t.id,
             accountId: acc.id,
-            accountType: acc.type,
+            accountType: acc.type,          // BANK | CREDIT
             date: (t.date || "").slice(0, 10),
-            description: t.description,
-            descriptionRaw: t.descriptionRaw,
-            amount: t.amount,               // valor (Pluggy: negativo = saída, positivo = entrada, p/ conta)
-            type: t.type,                   // DEBIT | CREDIT
+            description: t.description || t.descriptionRaw,
+            amount: t.amount,               // sinal = direção (negativo = despesa)
             category: t.category,
+            categoryId: t.categoryId,
+            status: t.status,               // POSTED | PENDING
+            installment: cc ? { n: cc.installmentNumber, total: cc.totalInstallments } : null,
             currencyCode: t.currencyCode,
           });
         }
-        page++;
-      } while (page <= totalPages && page <= 10); // trava de segurança
+        cursor = tResp.next ?? null;
+        guard++;
+      } while (cursor && guard < 50); // trava de segurança
     }
 
     return json({
@@ -132,8 +129,6 @@ Deno.serve(async (req: Request) => {
       accounts,
       transactions,
       counts: { accounts: accounts.length, transactions: transactions.length },
-      from,
-      to: toStr,
     });
   } catch (e) {
     return json({ error: "Falha ao sincronizar", detail: String((e as Error).message) }, 502);

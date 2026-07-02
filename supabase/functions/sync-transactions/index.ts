@@ -91,16 +91,16 @@ Deno.serve(async (req: Request) => {
       txCount: 0,
     }));
 
-    // Transações por conta — GET /v2/transactions com paginação por cursor (`next`).
+    // Transações por conta — GET /v2/transactions com paginação por cursor.
+    // O campo `next` da resposta JÁ é a querystring da próxima página
+    // (ex.: "?accountId=X&after=Y"), então é usado direto — não wrapear.
     // Regra de sinal: amount < 0 = saída/despesa; amount > 0 = entrada/receita
     // (o campo `type` é inconsistente em cartão, então NÃO é usado p/ direção).
     const transactions: any[] = [];
     for (const acc of accounts) {
-      let cursor: string | null = null;
+      let url: string | null = `${PLUGGY_BASE}/v2/transactions?accountId=${encodeURIComponent(acc.id)}`;
       let guard = 0;
-      do {
-        const url = `${PLUGGY_BASE}/v2/transactions?accountId=${encodeURIComponent(acc.id)}` +
-          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      while (url && guard < 200) {
         const tResp = await getJson(url, apiKey);
         for (const t of (tResp.results ?? [])) {
           acc.txCount++;
@@ -119,9 +119,14 @@ Deno.serve(async (req: Request) => {
             currencyCode: t.currencyCode,
           });
         }
-        cursor = tResp.next ?? null;
+        const next = tResp.next;
+        url = next
+          ? (String(next).startsWith("http")
+              ? String(next)
+              : `${PLUGGY_BASE}/v2/transactions${String(next).startsWith("?") ? next : "?" + next}`)
+          : null;
         guard++;
-      } while (cursor && guard < 50); // trava de segurança
+      }
     }
 
     return json({

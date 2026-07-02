@@ -203,6 +203,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="adicionarItemManual()">➕ Usar itemId de teste (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="limparConexoesLab()">🧹 Limpar conexões (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="copiarProducaoParaLab()">Copiar produção → lab</button>
+      <button class="sbtn" style="margin-top:8px;background:#3a1a1a;color:#f87171" onclick="zerarLab()">🧨 Zerar lab (apaga dados de teste)</button>
     </div>
     <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:14px">⚙️ Ciclo Financeiro</div>
@@ -496,7 +497,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 11';
+var APP_VERSION = 'v100-lab · build 12';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1728,6 +1729,14 @@ function adicionarItemManual(){
   if(db.pluggyItems.indexOf(id)<0)db.pluggyItems.push(id);
   log('pluggy_item_manual',{item:id.slice(0,8)});salvar();
   toast('✓ itemId adicionado. Clique em 🔄 Sincronizar.');
+}
+// Zera TODOS os dados financeiros do lab (tabela financas_lab). Não toca em produção.
+function zerarLab(){
+  if(!confirm('ZERAR o lab? Apaga todos os lançamentos, cartões, fixos e conexões do ambiente de teste (financas_lab).\n\nProdução NÃO é afetada. Continuar?'))return;
+  db.lancs=[];db.fixos=[];db.ocorrs=[];db.cartoes=[];db.ccLancs=[];db.ccPagamentos=[];
+  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};
+  log('lab_zerado',{});salvar();render();
+  toast('✓ Lab zerado. Agora conecte seu banco real.');
 }
 // Remove os itens Pluggy salvos no lab (ex.: item fantasma/404). Só limpa o lab.
 function limparConexoesLab(){

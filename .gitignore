@@ -1,0 +1,6 @@
+# Credenciais locais — NUNCA commitar (repo é público)
+.env
+pluggy/.env
+supabase/.env
+*.env.local
+node_modules/

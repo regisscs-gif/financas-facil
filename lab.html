@@ -199,6 +199,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">🧪 Ambiente LAB</div>
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
+      <label style="margin-top:10px">Trazer transações a partir de</label>
+      <input id="sync-from" type="date" style="margin-bottom:4px">
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="adicionarItemManual()">➕ Usar itemId de teste (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="limparConexoesLab()">🧹 Limpar conexões (lab)</button>
@@ -497,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 12';
+var APP_VERSION = 'v100-lab · build 13';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -789,6 +791,8 @@ function renderCfg() {
   document.getElementById('cfg-modelo').value = cfg.modelo;
   document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
+  var sf=document.getElementById('sync-from');
+  if(sf&&!sf.value){var _d=new Date();_d.setDate(_d.getDate()-90);sf.value=_d.toISOString().slice(0,10);}
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1755,9 +1759,10 @@ async function sincronizarBanco(){
   toast('Buscando transações...');
   try{
     var hdrs=await authHeaders();
+    var fromDate=(document.getElementById('sync-from')||{}).value||'';
     var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0},item:null};
     for(var i=0;i<items.length;i++){
-      var res=await axios.post(SYNC_URL,{itemId:items[i]},{headers:hdrs});
+      var res=await axios.post(SYNC_URL,{itemId:items[i],from:fromDate},{headers:hdrs});
       var d=res.data||{};
       // Log detalhado por item — copie da tela de log (Config) e me envie.
       log('pluggy_sync_item',{
@@ -1817,7 +1822,11 @@ function buildSyncCandidates(data,existing){
     if(t.plId&&existing[t.plId]){skipped++;return;}
     var val=Math.abs(t.amount);
     if(t.accountType==='CREDIT'){
-      var flag=(t.amount>0)?'card_credit':null;
+      // No cartão o sinal do amount é inconsistente (sandbox vs real), então NÃO
+      // é usado p/ direção: tudo é gasto, exceto pagamento/estorno por palavra-chave.
+      var s=((t.category||'')+' '+(t.description||'')).toLowerCase();
+      var isPay=isCardPaymentPl(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s);
+      var flag=isPay?'card_credit':null;
       out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
         cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',
         installment:(t.installment&&t.installment.total>1)?t.installment:null,

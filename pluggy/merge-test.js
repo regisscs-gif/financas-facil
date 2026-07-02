@@ -36,7 +36,8 @@ function buildCandidates(data, existingPlIds){
     if(t.plId && existingPlIds[t.plId]){skipped++;return;}
     var amt=t.amount, val=Math.abs(amt);
     if(t.accountType==='CREDIT'){
-      var flag=(amt>0)?'card_credit':null; // estorno/pagamento no cartão
+      var s=((t.category||'')+' '+(t.description||'')).toLowerCase();
+      var flag=(isCardPayment(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s))?'card_credit':null;
       out.push({target:'cc', accountId:t.accountId, desc:t.description, val:val,
         data:t.date, cat:mapCatPluggy(t.category,t.description,'e'), titular:'eu',
         installment:(t.installment&&t.installment.total>1)?t.installment:null,

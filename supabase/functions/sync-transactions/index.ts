@@ -96,22 +96,27 @@ Deno.serve(async (req: Request) => {
     // (ex.: "?accountId=X&after=Y"), então é usado direto — não wrapear.
     // Regra de sinal: amount < 0 = saída/despesa; amount > 0 = entrada/receita
     // (o campo `type` é inconsistente em cartão, então NÃO é usado p/ direção).
+    // Filtro de data é feito aqui (a v2 não aceita `from`). Como a v2 devolve
+    // da mais nova p/ a mais antiga, paramos de paginar ao cruzar o `from`.
     const transactions: any[] = [];
     for (const acc of accounts) {
       let url: string | null = `${PLUGGY_BASE}/v2/transactions?accountId=${encodeURIComponent(acc.id)}`;
       let guard = 0;
+      let sawOlder = false;
       while (url && guard < 200) {
         const tResp = await getJson(url, apiKey);
         for (const t of (tResp.results ?? [])) {
+          const d = (t.date || "").slice(0, 10);
+          if (from && d < from) { sawOlder = true; continue; }
           acc.txCount++;
           const cc = t.creditCardMetadata || null;
           transactions.push({
             id: t.id,
             accountId: acc.id,
             accountType: acc.type,          // BANK | CREDIT
-            date: (t.date || "").slice(0, 10),
+            date: d,
             description: t.description || t.descriptionRaw,
-            amount: t.amount,               // sinal = direção (negativo = despesa)
+            amount: t.amount,
             category: t.category,
             categoryId: t.categoryId,
             status: t.status,               // POSTED | PENDING
@@ -119,6 +124,7 @@ Deno.serve(async (req: Request) => {
             currencyCode: t.currencyCode,
           });
         }
+        if (from && sawOlder) break; // já passou da data de corte
         const next = tResp.next;
         url = next
           ? (String(next).startsWith("http")

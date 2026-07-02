@@ -200,6 +200,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
+      <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="adicionarItemManual()">➕ Usar itemId de teste (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="limparConexoesLab()">🧹 Limpar conexões (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="copiarProducaoParaLab()">Copiar produção → lab</button>
     </div>
@@ -495,7 +496,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 9';
+var APP_VERSION = 'v100-lab · build 10';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1718,6 +1719,16 @@ function onBancoConectado(itemData){
   toast('✓ Banco conectado! (item '+String(itemId).slice(0,8)+'…) Sincronização de transações vem no próximo passo.');
 }
 var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
+// Adiciona manualmente um itemId (ex.: um item sandbox criado via API para teste).
+function adicionarItemManual(){
+  var id=(prompt('Cole o itemId de teste (UUID):')||'').trim();
+  if(!id)return;
+  if(!/^[0-9a-f-]{30,}$/i.test(id)){toast('itemId inválido.');return;}
+  if(!db.pluggyItems)db.pluggyItems=[];
+  if(db.pluggyItems.indexOf(id)<0)db.pluggyItems.push(id);
+  log('pluggy_item_manual',{item:id.slice(0,8)});salvar();
+  toast('✓ itemId adicionado. Clique em 🔄 Sincronizar.');
+}
 // Remove os itens Pluggy salvos no lab (ex.: item fantasma/404). Só limpa o lab.
 function limparConexoesLab(){
   var n=(db.pluggyItems||[]).length;

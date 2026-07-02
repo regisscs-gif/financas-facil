@@ -199,6 +199,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">🧪 Ambiente LAB</div>
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
+      <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="copiarProducaoParaLab()">Copiar produção → lab</button>
     </div>
     <div class="card">
@@ -471,6 +472,14 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <h3>🔍 Conferência da fatura</h3>
     <div id="conf-fatura-content" style="max-height:65vh;overflow-y:auto"></div>
     <button class="cbtn" onclick="fechar('ov-conf-fatura')">Fechar</button>
+  </div>
+</div>
+
+<div class="ov" id="ov-sync">
+  <div class="mod" style="max-width:560px">
+    <h3>🔄 Transações da Pluggy (preview)</h3>
+    <div id="sync-content" style="max-height:65vh;overflow-y:auto"></div>
+    <button class="cbtn" onclick="fechar('ov-sync')">Fechar</button>
   </div>
 </div>
 
@@ -1703,6 +1712,56 @@ function onBancoConectado(itemData){
   log('pluggy_item',{itemId:itemId,connector:item.connector&&item.connector.name});
   salvar();
   toast('✓ Banco conectado! (item '+String(itemId).slice(0,8)+'…) Sincronização de transações vem no próximo passo.');
+}
+var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
+// Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
+// NÃO mescla nada ainda — fase de validação do formato real.
+async function sincronizarBanco(){
+  if(!currentUser){toast('Faça login primeiro.');return;}
+  var items=(db.pluggyItems||[]);
+  if(!items.length){toast('Conecte um banco primeiro (🔗 Conectar banco).');return;}
+  toast('Buscando transações...');
+  try{
+    var hdrs=await authHeaders();
+    var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0}};
+    for(var i=0;i<items.length;i++){
+      var res=await axios.post(SYNC_URL,{itemId:items[i]},{headers:hdrs});
+      var d=res.data||{};
+      if(d.error){toast('Erro: '+(d.detail||d.error));return;}
+      all.accounts=all.accounts.concat(d.accounts||[]);
+      all.transactions=all.transactions.concat(d.transactions||[]);
+    }
+    all.counts={accounts:all.accounts.length,transactions:all.transactions.length};
+    log('pluggy_sync',{itens:items.length,contas:all.counts.accounts,tx:all.counts.transactions});
+    mostrarPreviewSync(all);
+  }catch(e){
+    console.error(e);
+    var dd=e&&e.response&&e.response.data;
+    toast('Erro ao sincronizar: '+((dd&&(dd.detail||dd.error))||e.message||'desconhecido'));
+  }
+}
+function mostrarPreviewSync(data){
+  var h='<div style="background:rgba(124,58,237,.12);border:1px solid #7c3aed;border-radius:8px;padding:8px;font-size:11px;color:#c4b5fd;margin-bottom:10px">Fase de validação — <b>nada foi mesclado</b> nos seus lançamentos. Só estou mostrando o que a Pluggy retornou.</div>';
+  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões)</div>';
+  (data.accounts||[]).forEach(function(a){
+    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:6px"><div style="font-size:13px;font-weight:700">'+escHtml(a.name||a.type||'Conta')+' <span style="font-size:10px;color:#7b80a0">('+escHtml(a.type||'')+(a.subtype?'/'+escHtml(a.subtype):'')+')</span></div><div style="font-size:11px;color:#7b80a0">Saldo: '+(a.balance!=null?fmt(a.balance):'—')+' '+escHtml(a.currencyCode||'')+'</div></div>';
+  });
+  var txs=(data.transactions||[]).slice().sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
+  h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">Transações (mais recentes primeiro)</div>';
+  if(!txs.length)h+='<div style="font-size:12px;color:#7b80a0">Nenhuma transação no período (últimos 90 dias). O item pode ainda estar sincronizando na Pluggy.</div>';
+  txs.slice(0,200).forEach(function(t){
+    var dp=(t.date||'').split('-');var dlabel=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(t.date||'');
+    var neg=(t.amount<0)||t.type==='DEBIT';
+    var cor=neg?'#f87171':'#34d399';
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(t.description||t.descriptionRaw||'—')+'</div>'
+      +'<div style="font-size:10px;color:#7b80a0">'+dlabel+' · '+escHtml(t.category||'sem categoria')+' · '+escHtml(t.type||'')+'</div></div>'
+      +'<div style="font-size:13px;font-weight:700;color:'+cor+'">'+(neg?'-':'+')+fmt(Math.abs(t.amount||0))+'</div>'
+      +'</div>';
+  });
+  if(txs.length>200)h+='<div style="font-size:11px;color:#7b80a0;margin-top:6px">… e mais '+(txs.length-200)+' (mostrando as 200 primeiras).</div>';
+  document.getElementById('sync-content').innerHTML=h;
+  document.getElementById('ov-sync').classList.add('on');
 }
 // Copia os dados de PRODUÇÃO (tabela 'financas', somente-leitura) para o LAB
 // (tabela financas_lab). Nunca escreve em produção.

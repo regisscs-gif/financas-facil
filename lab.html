@@ -200,6 +200,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
+      <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="limparConexoesLab()">🧹 Limpar conexões (lab)</button>
       <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="copiarProducaoParaLab()">Copiar produção → lab</button>
     </div>
     <div class="card">
@@ -494,7 +495,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 7';
+var APP_VERSION = 'v100-lab · build 8';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1717,6 +1718,14 @@ function onBancoConectado(itemData){
   toast('✓ Banco conectado! (item '+String(itemId).slice(0,8)+'…) Sincronização de transações vem no próximo passo.');
 }
 var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
+// Remove os itens Pluggy salvos no lab (ex.: item fantasma/404). Só limpa o lab.
+function limparConexoesLab(){
+  var n=(db.pluggyItems||[]).length;
+  if(!n){toast('Nenhuma conexão salva.');return;}
+  if(!confirm('Remover '+n+' conexão(ões) Pluggy salva(s) no lab? (Isso não desconecta nada na Pluggy, só limpa a lista local.)'))return;
+  db.pluggyItems=[];log('pluggy_clear',{removidos:n});salvar();
+  toast('✓ '+n+' conexão(ões) removida(s). Reconecte um banco.');
+}
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
 // NÃO mescla nada ainda — fase de validação do formato real.
 async function sincronizarBanco(){
@@ -1771,6 +1780,8 @@ function mostrarPreviewSync(data){
       +'</div>';
     if(st==='UPDATING'||it.executionStatus==='CREATED'||it.executionStatus==='UPDATING')
       h+='<div style="font-size:11px;color:#fbbf24;margin-bottom:8px">⏳ O item ainda está sincronizando na Pluggy. Aguarde alguns segundos e clique em Sincronizar de novo.</div>';
+    if(it.error&&/not.?found|404|ITEM_NOT_FOUND/i.test(JSON.stringify(it.error)))
+      h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado na Pluggy (conexão inválida/expirada). Clique em <b>🧹 Limpar conexões</b> e depois <b>🔗 Conectar banco</b> de novo — use o sandbox <b>"Pluggy Bank"</b> (usuário <code>user-ok</code>, senha <code>password-ok</code>).</div>';
   }
   h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · janela '+escHtml(data.from||'')+' a '+escHtml(data.to||'')+'</div>';
   (data.accounts||[]).forEach(function(a){

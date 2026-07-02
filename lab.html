@@ -494,7 +494,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 6';
+var APP_VERSION = 'v100-lab · build 7';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1726,11 +1726,25 @@ async function sincronizarBanco(){
   toast('Buscando transações...');
   try{
     var hdrs=await authHeaders();
-    var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0}};
+    var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0},item:null};
     for(var i=0;i<items.length;i++){
       var res=await axios.post(SYNC_URL,{itemId:items[i]},{headers:hdrs});
       var d=res.data||{};
+      // Log detalhado por item — copie da tela de log (Config) e me envie.
+      log('pluggy_sync_item',{
+        item:String(items[i]).slice(0,8),
+        status:d.item&&d.item.status,
+        exec:d.item&&d.item.executionStatus,
+        connector:d.item&&d.item.connector,
+        itemError:d.item&&d.item.error,
+        respError:d.error||null, detail:d.detail||null,
+        from:d.from, to:d.to,
+        contas:(d.accounts||[]).map(function(a){return {type:a.type,sub:a.subtype,tx:a.txCount,bal:a.balance};}),
+        nTx:(d.transactions||[]).length,
+        exTx:(d.transactions||[]).slice(0,3).map(function(t){return {date:t.date,desc:t.description,amount:t.amount,type:t.type};})
+      });
       if(d.error){toast('Erro: '+(d.detail||d.error));return;}
+      if(d.item)all.item=d.item;
       all.accounts=all.accounts.concat(d.accounts||[]);
       all.transactions=all.transactions.concat(d.transactions||[]);
     }
@@ -1740,6 +1754,7 @@ async function sincronizarBanco(){
   }catch(e){
     console.error(e);
     var dd=e&&e.response&&e.response.data;
+    log('pluggy_sync_erro',{msg:e.message,status:e&&e.response&&e.response.status,detail:dd&&(dd.detail||dd.error)});
     toast('Erro ao sincronizar: '+((dd&&(dd.detail||dd.error))||e.message||'desconhecido'));
   }
 }

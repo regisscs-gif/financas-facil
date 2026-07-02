@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 14';
+var APP_VERSION = 'v100-lab · build 15';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1793,7 +1793,7 @@ async function sincronizarBanco(){
   }
 }
 // ── Mapeamento Pluggy → modelo do app (validado em pluggy/merge-test.js) ──
-var syncData=null,syncCands=[],syncSkipped=0;
+var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={};
 function mapCatPluggy(plCat,desc,tipo){
   var c=(plCat||'').toLowerCase();
   if(tipo==='r'){
@@ -1847,11 +1847,24 @@ function mostrarPreviewSync(data){
   var existing={},existKeys={};
   db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
   db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
+  // Mapeamento cartão Pluggy → cartão do app (auto-match por nome; senão criar novo).
+  if(!db.pluggyCards)db.pluggyCards={};
+  syncCardMap={};
+  (data.accounts||[]).forEach(function(a){
+    if(a.type!=='CREDIT')return;
+    var pre=db.pluggyCards[a.id];
+    if(pre&&db.cartoes.some(function(c){return c.id===pre;})){syncCardMap[a.id]=pre;return;}
+    var na=dkNorm(a.name||'');
+    var m=db.cartoes.find(function(c){return dkNorm(c.nome)===na;})
+        ||db.cartoes.find(function(c){return na&&(dkNorm(c.nome).indexOf(na)>=0||na.indexOf(dkNorm(c.nome))>=0);});
+    syncCardMap[a.id]=m?m.id:'new';
+  });
   var r=buildSyncCandidates(data,existing,existKeys);
   syncCands=r.candidates;syncSkipped=r.skipped;
   renderSyncPreview();
   document.getElementById('ov-sync').classList.add('on');
 }
+function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
 function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
 function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
 function setSyncTit(i,v){if(syncCands[i])syncCands[i].titular=v;}
@@ -1863,6 +1876,7 @@ function syncCatOpts(c){
 function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':f==='ja_existe'?'provável duplicata (já existe no app)':'';}
 function renderSyncPreview(){
   var data=syncData,it=data.item,h='';
+  var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
   if(it){
     var st=it.status||'?';var stCor=(st==='UPDATED')?'#34d399':(st==='UPDATING')?'#fbbf24':'#f87171';
     h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:8px;font-size:11px">Item: <b style="color:'+stCor+'">'+escHtml(st)+'</b>'
@@ -1871,6 +1885,19 @@ function renderSyncPreview(){
       h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado. Use 🧹 Limpar conexões e reconecte com "Pluggy Bank".</div>';
   }
   h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · '+syncSkipped+' já no app (ignoradas)</div>';
+  var credAccs=(data.accounts||[]).filter(function(a){return a.type==='CREDIT';});
+  if(credAccs.length){
+    h+='<div style="margin:8px 0 4px;font-size:12px;font-weight:700">Mapear cartão</div>';
+    credAccs.forEach(function(a){
+      var sel=syncCardMap[a.id];
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px">'
+        +'<span style="flex:1;min-width:0;color:#7b80a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💳 '+escHtml(a.name||'Cartão')+' →</span>'
+        +'<select onchange="setSyncCardMap(\''+a.id+'\',this.value)" style="'+selSt+'">'
+        +db.cartoes.map(function(c){return '<option value="'+c.id+'"'+(sel==c.id?' selected':'')+'>'+escHtml(c.nome)+'</option>';}).join('')
+        +'<option value="new"'+(sel==='new'?' selected':'')+'>➕ Criar novo</option>'
+        +'</select></div>';
+    });
+  }
   var groups=[{t:'lancs',label:'🏦 Conta corrente → Lançamentos'},{t:'cc',label:'💳 Cartão → Fatura'}];
   groups.forEach(function(g){
     var list=[];syncCands.forEach(function(c,i){if(c.target===g.t){c._i=i;list.push(c);}});
@@ -1882,7 +1909,6 @@ function renderSyncPreview(){
       var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
       var pinfo=(c.installment&&c.installment.total)?(' <span class="tag tprc">'+c.installment.n+'/'+c.installment.total+'</span>'):'';
       var nota=flagNota(c.flag);
-      var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
       h+='<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
         +'<div style="display:flex;align-items:center;gap:8px">'
           +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
@@ -1907,13 +1933,13 @@ function confirmarMergeSync(){
   var cands=syncCands.filter(function(c){return c.checked;});
   if(!cands.length){toast('Nada selecionado.');return;}
   if(!db.pluggyCards)db.pluggyCards={};
-  // Resolve cada conta CREDIT da Pluggy → um cartão do app (cria se faltar).
+  // Resolve cada conta CREDIT da Pluggy → cartão do app conforme o mapeamento escolhido.
   (syncData.accounts||[]).forEach(function(a){
     if(a.type!=='CREDIT')return;
-    var ccId=db.pluggyCards[a.id];
-    if(ccId&&db.cartoes.some(function(c){return c.id===ccId;}))return;
-    var nc={id:db.nid++,nome:a.name||'Cartão Pluggy',limite:0,fecha:1,vence:10};
-    db.cartoes.push(nc);db.pluggyCards[a.id]=nc.id;
+    var sel=syncCardMap[a.id],ccId;
+    if(sel&&sel!=='new'&&db.cartoes.some(function(c){return c.id===+sel;}))ccId=+sel;
+    else{var nc={id:db.nid++,nome:a.name||'Cartão Pluggy',limite:0,fecha:1,vence:10};db.cartoes.push(nc);ccId=nc.id;}
+    db.pluggyCards[a.id]=ccId;
   });
   var addL=0,addC=0;
   cands.forEach(function(c){

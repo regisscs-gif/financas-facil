@@ -200,6 +200,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
       <div id="lab-conns"></div>
+      <button class="sbtn" style="margin-top:8px" onclick="abrirConfigImport()">⚙️ Configurar contas & cartões</button>
       <label style="margin-top:10px">Trazer transações a partir de</label>
       <input id="sync-from" type="date" style="margin-bottom:4px">
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
@@ -489,6 +490,16 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-imp-cfg">
+  <div class="mod" style="max-width:560px">
+    <h3>⚙️ Configurar importação</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Escolha o que importar de cada banco. Só o que estiver marcado/mapeado entra na sincronização.</div>
+    <div id="imp-cfg-content" style="max-height:60vh;overflow-y:auto"></div>
+    <button class="sbtn" style="margin-top:12px" onclick="salvarConfigImport()">Salvar configuração</button>
+    <button class="cbtn" onclick="fechar('ov-imp-cfg')">Fechar</button>
+  </div>
+</div>
+
 <script>
 // ── SUPABASE CONFIG ──────────────────────────────────────
 var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
@@ -500,7 +511,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 23';
+var APP_VERSION = 'v100-lab · build 24';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1765,11 +1776,86 @@ function renomearConexao(id){
   salvar();renderLabConns();render();
   toast('✓ Renomeado para "'+nome+'".');
 }
+// ── Configuração de importação (o que importar + de→para de cartões) ──
+var impCfgBuf=[];
+async function abrirConfigImport(){
+  if(!currentUser){toast('Faça login primeiro.');return;}
+  var items=db.pluggyItems||[];
+  if(!items.length){toast('Conecte um banco primeiro.');return;}
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  document.getElementById('imp-cfg-content').innerHTML='<div style="color:#7b80a0;font-size:12px">Buscando contas...</div>';
+  document.getElementById('ov-imp-cfg').classList.add('on');
+  try{
+    var hdrs=await authHeaders();impCfgBuf=[];
+    for(var i=0;i<items.length;i++){
+      var id=items[i];
+      var res=await axios.post(SYNC_URL,{itemId:id,accountsOnly:true},{headers:hdrs});
+      var d=res.data||{};
+      var banco=(db.pluggyItemNames&&db.pluggyItemNames[id])||(d.item&&d.item.connector)||'Banco';
+      if(d.error||(d.item&&d.item.error)){impCfgBuf.push({itemId:id,banco:banco,erro:String(d.detail||d.error||JSON.stringify(d.item&&d.item.error))});continue;}
+      (d.accounts||[]).forEach(function(a){
+        var prev=db.pluggyAccs[a.id]||{},isCred=(a.type==='CREDIT');
+        var autoCc='new';
+        if(isCred){var na=dkNorm(a.name||'');var m=(db.cartoes||[]).find(function(c){return dkNorm(c.nome)===na;})||(db.cartoes||[]).find(function(c){return na&&(dkNorm(c.nome).indexOf(na)>=0||na.indexOf(dkNorm(c.nome))>=0);});if(m)autoCc=m.id;}
+        impCfgBuf.push({plAccId:a.id,itemId:id,banco:banco,tipo:a.type,name:a.name,number:a.number,
+          nome:(prev.nome!=null?prev.nome:(a.name||banco)),
+          incluir:(prev.incluir!=null?prev.incluir:true),
+          ccId:(prev.ccId!=null?prev.ccId:(isCred?autoCc:null))});
+      });
+    }
+    renderConfigImport();
+  }catch(e){
+    var dd=e&&e.response&&e.response.data;
+    document.getElementById('imp-cfg-content').innerHTML='<div style="color:#f87171;font-size:12px">Erro ao buscar contas: '+escHtml(String((dd&&(dd.detail||dd.error))||e.message||''))+'</div>';
+  }
+}
+function renderConfigImport(){
+  var byItem={},order=[];
+  impCfgBuf.forEach(function(a){if(!byItem[a.itemId]){byItem[a.itemId]=[];order.push(a.itemId);}byItem[a.itemId].push(a);});
+  var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:3px 5px';
+  var h=order.map(function(id){
+    var banco=(db.pluggyItemNames&&db.pluggyItemNames[id])||'Banco',inner='';
+    byItem[id].forEach(function(a){
+      if(a.erro){inner+='<div style="font-size:11px;color:#f87171;padding:6px 0">⚠️ '+escHtml(a.erro).slice(0,160)+'</div>';return;}
+      if(a.tipo==='CREDIT'){
+        inner+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a2f4a">'
+          +'<span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">💳 '+escHtml(a.name||'Cartão')+(a.number?' <span style="color:#7b80a0;font-size:10px">'+escHtml(String(a.number))+'</span>':'')+'</span>'
+          +'<select onchange="cfgSetCard(\''+a.plAccId+'\',this.value)" style="'+selSt+'">'
+          +(db.cartoes||[]).map(function(c){return '<option value="'+c.id+'"'+(a.ccId==c.id?' selected':'')+'>'+escHtml(c.nome)+'</option>';}).join('')
+          +'<option value="new"'+(a.ccId==='new'?' selected':'')+'>➕ Criar novo</option>'
+          +'<option value="ignore"'+(a.ccId==='ignore'?' selected':'')+'>🚫 Não importar</option>'
+          +'</select></div>';
+      }else{
+        inner+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a2f4a">'
+          +'<input type="checkbox"'+(a.incluir?' checked':'')+' onchange="cfgSetIncluir(\''+a.plAccId+'\',this.checked)" style="width:16px;height:16px;flex:none" title="Importar esta conta">'
+          +'<span style="flex:none">🏦</span>'
+          +'<input value="'+escHtml(a.nome)+'" onchange="cfgSetNome(\''+a.plAccId+'\',this.value)" style="flex:1;min-width:0;'+selSt+'">'
+          +(a.number?'<span style="color:#7b80a0;font-size:10px;flex:none">'+escHtml(String(a.number))+'</span>':'')
+          +'</div>';
+      }
+    });
+    return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#a5b4fc;margin-bottom:2px">🔗 '+escHtml(banco)+'</div>'+inner+'</div>';
+  }).join('');
+  document.getElementById('imp-cfg-content').innerHTML=h||'<div style="color:#7b80a0;font-size:12px">Nenhuma conta encontrada.</div>';
+}
+function cfgFind(id){return impCfgBuf.find(function(a){return a.plAccId===id;});}
+function cfgSetIncluir(id,c){var a=cfgFind(id);if(a)a.incluir=c;}
+function cfgSetNome(id,v){var a=cfgFind(id);if(a)a.nome=v;}
+function cfgSetCard(id,v){var a=cfgFind(id);if(a)a.ccId=(v==='new'||v==='ignore')?v:(+v);}
+function salvarConfigImport(){
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  impCfgBuf.forEach(function(a){
+    if(a.erro)return;
+    db.pluggyAccs[a.plAccId]={itemId:a.itemId,banco:a.banco,tipo:a.tipo,name:a.name,number:a.number,nome:a.nome,incluir:a.incluir,ccId:a.ccId,configurado:true};
+  });
+  salvar();fechar('ov-imp-cfg');render();
+  toast('✓ Configuração salva.');
+}
 // Zera TODOS os dados financeiros do lab (tabela financas_lab). Não toca em produção.
 function zerarLab(){
   if(!confirm('ZERAR o lab? Apaga todos os lançamentos, cartões, fixos e conexões do ambiente de teste (financas_lab).\n\nProdução NÃO é afetada. Continuar?'))return;
   db.lancs=[];db.fixos=[];db.ocorrs=[];db.cartoes=[];db.ccLancs=[];db.ccPagamentos=[];
-  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};db.contas=[];db.pluggyItemNames={};
+  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};db.contas=[];db.pluggyItemNames={};db.pluggyAccs={};
   log('lab_zerado',{});salvar();render();
   toast('✓ Lab zerado. Agora conecte seu banco real.');
 }
@@ -1778,7 +1864,7 @@ function limparConexoesLab(){
   var n=(db.pluggyItems||[]).length;
   if(!n){toast('Nenhuma conexão salva.');return;}
   if(!confirm('Remover '+n+' conexão(ões) Pluggy salva(s) no lab? (Isso não desconecta nada na Pluggy, só limpa a lista local.)'))return;
-  db.pluggyItems=[];db.pluggyItemNames={};log('pluggy_clear',{removidos:n});salvar();renderLabConns();
+  db.pluggyItems=[];db.pluggyItemNames={};db.pluggyAccs={};log('pluggy_clear',{removidos:n});salvar();renderLabConns();
   toast('✓ '+n+' conexão(ões) removida(s). Reconecte um banco.');
 }
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
@@ -1787,13 +1873,17 @@ async function sincronizarBanco(){
   if(!currentUser){toast('Faça login primeiro.');return;}
   var items=(db.pluggyItems||[]);
   if(!items.length){toast('Conecte um banco primeiro (🔗 Conectar banco).');return;}
+  // Exige configuração: só importa contas configuradas (BANK incluir / CREDIT != ignore).
+  var accs=db.pluggyAccs||{};
+  var importable=Object.keys(accs).filter(function(k){var a=accs[k];if(!a||!a.configurado)return false;return a.tipo==='CREDIT'?a.ccId!=='ignore':!!a.incluir;});
+  if(!importable.length){toast('Configure o que importar primeiro (⚙️ Configurar contas & cartões).');abrirConfigImport();return;}
   toast('Buscando transações...');
   try{
     var hdrs=await authHeaders();
     var fromDate=(document.getElementById('sync-from')||{}).value||'';
     var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0},item:null};
     for(var i=0;i<items.length;i++){
-      var res=await axios.post(SYNC_URL,{itemId:items[i],from:fromDate},{headers:hdrs});
+      var res=await axios.post(SYNC_URL,{itemId:items[i],from:fromDate,accountIds:importable},{headers:hdrs});
       var d=res.data||{};
       // Log detalhado por item — copie da tela de log (Config) e me envie.
       log('pluggy_sync_item',{
@@ -1811,7 +1901,7 @@ async function sincronizarBanco(){
       if(d.error){toast('Erro: '+(d.detail||d.error));return;}
       if(d.item)all.item=d.item;
       var banco=(db.pluggyItemNames&&db.pluggyItemNames[items[i]])||(d.item&&d.item.connector)||'Banco';
-      (d.accounts||[]).forEach(function(a){a.banco=banco;a.plItemId=items[i];});
+      (d.accounts||[]).forEach(function(a){var cfg=(db.pluggyAccs||{})[a.id]||{};a.banco=(a.type!=='CREDIT'&&cfg.nome)?cfg.nome:banco;a.plItemId=items[i];});
       all.accounts=all.accounts.concat(d.accounts||[]);
       all.transactions=all.transactions.concat(d.transactions||[]);
     }
@@ -1855,6 +1945,7 @@ function shiftMonth(ds,k){var p=(ds||'').split('-');var d=new Date(+p[0],(+p[1]-
 function buildSyncCandidates(data,existing,existDV){
   var out=[],skipped=0,groups={};
   var accById={};(data.accounts||[]).forEach(function(a){accById[a.id]=a;});
+  var cfg=db.pluggyAccs||{};
   (data.transactions||[]).forEach(function(t){
     if(t.plId&&existing[t.plId]){skipped++;return;} // já mesclado antes (mesmo plId)
     var val=Math.abs(t.amount);
@@ -1880,7 +1971,7 @@ function buildSyncCandidates(data,existing,existDV){
       var isPay=isCardPaymentPl(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s);
       var flag=dv?'ja_existe':(isPay?'card_credit':null);
       out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
-        cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',
+        cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',ccId:(cfg[t.accountId]||{}).ccId,
         plId:t.plId,flag:flag,dupOf:dv||null,checked:!flag});
     }else{
       var tipo=(t.amount<0)?'e':'r';
@@ -1895,7 +1986,7 @@ function buildSyncCandidates(data,existing,existDV){
   out=out.map(function(o){
     if(!o.__group)return o;
     var g=groups[o.__group];var firstDate=shiftMonth(g.repDate,-(g.repN-1));
-    return {target:'cc',accountId:g.accountId,desc:g.desc,val:g.val,data:firstDate,cat:g.cat,titular:'eu',
+    return {target:'cc',accountId:g.accountId,desc:g.desc,val:g.val,data:firstDate,cat:g.cat,titular:'eu',ccId:(cfg[g.accountId]||{}).ccId,
       installmentGroup:{total:g.total,firstDate:firstDate},plIds:g.plIds,plId:g.plIds[0],flag:null,checked:true};
   });
   return {candidates:out,skipped:skipped};
@@ -1906,18 +1997,6 @@ function mostrarPreviewSync(data){
   db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existDV[syncDVKey(l.data,l.val)]=l.desc;});
   db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existDV[syncDVKey(l.data,l.val)]=l.desc;});
   if(db.pluggySeen)Object.keys(db.pluggySeen).forEach(function(p){existing[p]=true;});
-  // Mapeamento cartão Pluggy → cartão do app (auto-match por nome; senão criar novo).
-  if(!db.pluggyCards)db.pluggyCards={};
-  syncCardMap={};
-  (data.accounts||[]).forEach(function(a){
-    if(a.type!=='CREDIT')return;
-    var pre=db.pluggyCards[a.id];
-    if(pre&&db.cartoes.some(function(c){return c.id===pre;})){syncCardMap[a.id]=pre;return;}
-    var na=dkNorm(a.name||'');
-    var m=db.cartoes.find(function(c){return dkNorm(c.nome)===na;})
-        ||db.cartoes.find(function(c){return na&&(dkNorm(c.nome).indexOf(na)>=0||na.indexOf(dkNorm(c.nome))>=0);});
-    syncCardMap[a.id]=m?m.id:'new';
-  });
   var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
   // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
@@ -1982,19 +2061,6 @@ function renderSyncPreview(){
           +'<span style="font-size:12px;font-weight:700;color:#f87171;flex:none">-'+fmt(f.val)+'</span></label>';
       }).join('')+'</div>';
   }
-  var credAccs=(data.accounts||[]).filter(function(a){return a.type==='CREDIT';});
-  if(credAccs.length){
-    h+='<div style="margin:8px 0 4px;font-size:12px;font-weight:700">Mapear cartão</div>';
-    credAccs.forEach(function(a){
-      var sel=syncCardMap[a.id];
-      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px">'
-        +'<span style="flex:1;min-width:0;color:#7b80a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💳 '+escHtml(a.name||'Cartão')+' →</span>'
-        +'<select onchange="setSyncCardMap(\''+a.id+'\',this.value)" style="'+selSt+'">'
-        +db.cartoes.map(function(c){return '<option value="'+c.id+'"'+(sel==c.id?' selected':'')+'>'+escHtml(c.nome)+'</option>';}).join('')
-        +'<option value="new"'+(sel==='new'?' selected':'')+'>➕ Criar novo</option>'
-        +'</select></div>';
-    });
-  }
   syncCands.forEach(function(c,i){c._i=i;});
   // Conta corrente → uma subseção por CONTA (cada conta da Pluggy), rotulada pelo banco.
   var lancsCands=syncCands.filter(function(c){return c.target==='lancs';});
@@ -2025,17 +2091,20 @@ function renderSyncPreview(){
 function confirmarMergeSync(){
   var cands=syncCands.filter(function(c){return c.checked;});
   if(!cands.length){toast('Nada selecionado.');return;}
-  if(!db.pluggyCards)db.pluggyCards={};
-  // Resolve cada conta CREDIT da Pluggy → cartão do app conforme o mapeamento escolhido.
-  (syncData.accounts||[]).forEach(function(a){
-    if(a.type!=='CREDIT')return;
-    var sel=syncCardMap[a.id],ccId;
-    if(sel&&sel!=='new'&&db.cartoes.some(function(c){return c.id===+sel;}))ccId=+sel;
-    else{var nc={id:db.nid++,nome:a.name||'Cartão Pluggy',limite:0,fecha:1,vence:10};db.cartoes.push(nc);ccId=nc.id;}
-    db.pluggyCards[a.id]=ccId;
-  });
   if(!db.pluggySeen)db.pluggySeen={};
   if(!db.contas)db.contas=[];
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  // Resolve o cartão (de→para) de cada conta CREDIT pela CONFIG: existente | criar | ignorar.
+  var cardResolved={};
+  function resolveCard(c){
+    var accId=c.accountId;
+    if(cardResolved[accId]!=null)return cardResolved[accId];
+    var sel=(db.pluggyAccs[accId]||{}).ccId,ccId;
+    if(sel==='ignore'){cardResolved[accId]='ignore';return 'ignore';}
+    if(sel!=null&&sel!=='new'&&db.cartoes.some(function(x){return x.id===+sel;}))ccId=+sel;
+    else{var nome=(db.pluggyAccs[accId]||{}).name||'Cartão';var nc={id:db.nid++,nome:nome,limite:0,fecha:1,vence:10};db.cartoes.push(nc);ccId=nc.id;if(db.pluggyAccs[accId])db.pluggyAccs[accId].ccId=ccId;}
+    cardResolved[accId]=ccId;return ccId;
+  }
   // Resolve conta bancária por plAccId (cria com o nome do banco se faltar).
   function resolveConta(c){
     if(!c.plAccId)return null;
@@ -2055,7 +2124,8 @@ function confirmarMergeSync(){
       db.lancs.push(nl);if(c.tipo==='e')novosBank.push(nl);addL++;
       return;
     }
-    var ccId=db.pluggyCards[c.accountId];
+    var ccId=resolveCard(c);
+    if(ccId==='ignore')return;
     if(c.installmentGroup){
       // Replica a compra parcelada em N meses (1 débito → N parcelas), como no import de fatura.
       var g=c.installmentGroup,pid='pl'+ccId+'§'+dkNorm(c.desc)+'§'+g.total;

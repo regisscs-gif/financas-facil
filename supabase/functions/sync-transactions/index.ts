@@ -52,10 +52,14 @@ Deno.serve(async (req: Request) => {
 
   let itemId = "";
   let from = "";
+  let accountsOnly = false;
+  let accountIds: string[] | null = null;
   try {
     const body = await req.json();
     itemId = String(body?.itemId ?? "");
     from = String(body?.from ?? "");
+    accountsOnly = body?.accountsOnly === true;
+    if (Array.isArray(body?.accountIds)) accountIds = body.accountIds.map((x: any) => String(x));
   } catch (_) { /* ignore */ }
   if (!itemId) return json({ error: "itemId é obrigatório." }, 400);
 
@@ -91,6 +95,15 @@ Deno.serve(async (req: Request) => {
       txCount: 0,
     }));
 
+    // Modo "só contas": p/ a tela de configuração de importação (sem buscar transações).
+    if (accountsOnly) {
+      return json({ item, accounts, counts: { accounts: accounts.length, transactions: 0 } });
+    }
+    // Se accountIds foi passado, busca transações apenas dessas contas (ex.: exclui poupança).
+    const accsToFetch = accountIds
+      ? accounts.filter((a: any) => accountIds!.indexOf(a.id) >= 0)
+      : accounts;
+
     // Transações por conta — GET /v2/transactions com paginação por cursor.
     // O campo `next` da resposta JÁ é a querystring da próxima página
     // (ex.: "?accountId=X&after=Y"), então é usado direto — não wrapear.
@@ -99,7 +112,7 @@ Deno.serve(async (req: Request) => {
     // Filtro de data é feito aqui (a v2 não aceita `from`). Como a v2 devolve
     // da mais nova p/ a mais antiga, paramos de paginar ao cruzar o `from`.
     const transactions: any[] = [];
-    for (const acc of accounts) {
+    for (const acc of accsToFetch) {
       let url: string | null = `${PLUGGY_BASE}/v2/transactions?accountId=${encodeURIComponent(acc.id)}`;
       let guard = 0;
       let sawOlder = false;

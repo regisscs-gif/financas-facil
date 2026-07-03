@@ -511,7 +511,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 25';
+var APP_VERSION = 'v100-lab · build 26';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -2606,6 +2606,8 @@ function lerPDFFatura(file,password){
 }
 function parsearFaturaSantander(lines,existingKeys){
   var items=[],dupCount=0;
+  var ccId=fatCCId,existParc={},existVD={};
+  db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // Inferir mês/ano pelo primeiro DD/MM/YYYY encontrado (vencimento)
   var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
   for(var i=0;i<lines.length&&i<25;i++){
@@ -2662,21 +2664,27 @@ function parsearFaturaSantander(lines,existingKeys){
       csvKey=data+'|'+desc+'|'+valAbs;
     }
     if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
+    if(isParcela&&existParc[ccParcKeyParts(ccId,desc,valAbs,pn,pt)]){dupCount++;continue;}
     // Parcelas futuras (pn+1 até pt)
     var futureDates=[];
     if(isParcela){
       for(var fk=1;fk<=pt-pn;fk++){
         var fd=billingDate(fk);
         var fcsv=fd+'|'+desc+'|'+valAbs;
-        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
+        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]||!!existParc[ccParcKeyParts(ccId,desc,valAbs,pn+fk,pt)]});
       }
     }
-    items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+    var softDup=(!isParcela)?existVD[dkNorm(desc)+'|'+Math.round(valAbs*100)]:null;
+    items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:!softDup,softDupDescs:softDup?[softDup]:null,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
   }
   return{items:items,dupCount:dupCount};
 }
 function parsearFaturaItau(lines,existingKeys){
   var items=[],dupCount=0;
+  // Dedup cruzada (ex.: mesmo cartão já veio da Pluggy): parcela por ccParcKey (sem data),
+  // não-parcela por valor+descrição normalizada. fatCCId = cartão alvo do PDF.
+  var ccId=fatCCId,existParc={},existVD={};
+  db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // PDF.js insere espaços entre caracteres especiais ("Lan ç amentos").
   // Normalizar removendo espaços é essencial para detectar seções.
   function norm(s){return s.replace(/\s+/g,'');}
@@ -2745,15 +2753,19 @@ function parsearFaturaItau(lines,existingKeys){
         csvKey=data+'|'+desc+'|'+valAbs;
       }
       if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
+      // Parcela já existente (qualquer fonte, inclusive Pluggy) → identidade sem data.
+      if(isParcela&&existParc[ccParcKeyParts(ccId,desc,valAbs,pn,pt)]){dupCount++;continue;}
       var futureDates=[];
       if(isParcela){
         for(var fk=1;fk<=pt-pn;fk++){
           var fd=billingDate(fk);
           var fcsv=fd+'|'+desc+'|'+valAbs;
-          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
+          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]||!!existParc[ccParcKeyParts(ccId,desc,valAbs,pn+fk,pt)]});
         }
       }
-      items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+      // Não-parcela: mesmo valor+descrição já no cartão (data pode diferir entre fontes) → soft dup.
+      var softDup=(!isParcela)?existVD[dkNorm(desc)+'|'+Math.round(valAbs*100)]:null;
+      items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:!softDup,softDupDescs:softDup?[softDup]:null,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
     }
   }
   return{items:items,dupCount:dupCount};

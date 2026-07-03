@@ -194,6 +194,16 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   <!-- CONFIGURAÇÕES -->
   <div class="page" id="pg-cfg">
     <div class="card">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">🔗 Bancos (Open Finance)</div>
+      <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Conecte seus bancos e cartões via Open Finance (Pluggy) para puxar saldos e transações automaticamente — sem precisar importar extrato.</div>
+      <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco</button>
+      <div id="lab-conns"></div>
+      <button class="sbtn" style="margin-top:8px" onclick="abrirConfigImport()">⚙️ Configurar contas & cartões</button>
+      <label style="margin-top:10px">Trazer transações a partir de</label>
+      <input id="sync-from" type="date" style="margin-bottom:4px">
+      <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
+    </div>
+    <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:14px">⚙️ Ciclo Financeiro</div>
       <label>Modelo de ciclo</label>
       <select id="cfg-modelo" onchange="onCfgModelo()">
@@ -466,13 +476,32 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-sync">
+  <div class="mod" style="max-width:560px">
+    <h3>🔄 Sincronizar — revisar e mesclar</h3>
+    <div id="sync-content" style="max-height:65vh;overflow-y:auto"></div>
+    <button class="cbtn" onclick="fechar('ov-sync')">Fechar</button>
+  </div>
+</div>
+
+<div class="ov" id="ov-imp-cfg">
+  <div class="mod" style="max-width:560px">
+    <h3>⚙️ Configurar importação</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Escolha o que importar de cada banco. Só o que estiver marcado/mapeado entra na sincronização.</div>
+    <div id="imp-cfg-content" style="max-height:60vh;overflow-y:auto"></div>
+    <button class="sbtn" style="margin-top:12px" onclick="salvarConfigImport()">Salvar configuração</button>
+    <button class="cbtn" onclick="fechar('ov-imp-cfg')">Fechar</button>
+  </div>
+</div>
+
 <script>
 // ── SUPABASE CONFIG ──────────────────────────────────────
 var SUPA_URL = 'https://wnllrhszlantunpwozhv.supabase.co';
 var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+var TABLE='financas';
 
-var APP_VERSION = 'v100';
+var APP_VERSION = 'v101';
 
 var currentUser = null;
 var accessToken = null;
@@ -570,7 +599,7 @@ async function carregarDados(){
   for(var tentativa=1; tentativa<=2; tentativa++){
     try{
       var hdrs = await authHeaders();
-      var res = await axios.get(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id+'&select=dados',{ headers:hdrs });
+      var res = await axios.get(SUPA_URL+'/rest/v1/'+TABLE+'?user_id=eq.'+currentUser.id+'&select=dados',{ headers:hdrs });
       if(res.data && res.data.length>0 && res.data[0].dados){
         var d = res.data[0].dados;
         db = Object.assign({},db,d);
@@ -590,7 +619,7 @@ async function salvarNuvem(){
   document.getElementById('saving-indicator').style.display='inline';
   try{
     var hdrs = await authHeaders();
-    await axios.patch(SUPA_URL+'/rest/v1/financas?user_id=eq.'+currentUser.id,
+    await axios.patch(SUPA_URL+'/rest/v1/'+TABLE+'?user_id=eq.'+currentUser.id,
       {dados:db, updated_at: new Date().toISOString()},
       {headers:hdrs}
     );
@@ -607,7 +636,7 @@ function salvar(){
 // ── DADOS ────────────────────────────────────────────────
 var db = {
   lancs:[], fixos:[], ocorrs:[],
-  cartoes:[], ccLancs:[], ccPagamentos:[],
+  cartoes:[], ccLancs:[], ccPagamentos:[], contas:[],
   catsR:['Salário','Freelance','Investimentos','Outros'],
   catsE:['Moradia','Alimentação','Transporte','Saúde','Lazer','Educação','Vestuário','Outros'],
   cfg:{ modelo:'cal', diaInicio:1 }, // ciclo financeiro
@@ -761,6 +790,8 @@ function renderCfg() {
   document.getElementById('cfg-modelo').value = cfg.modelo;
   document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
+  var sf=document.getElementById('sync-from');
+  if(sf&&!sf.value){var _d=new Date();_d.setDate(_d.getDate()-90);sf.value=_d.toISOString().slice(0,10);}
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1621,7 +1652,12 @@ function autoCatExtrato(desc,tipo){
   return(db.catsE&&db.catsE.length)?db.catsE[db.catsE.length-1]:'Outros';
 }
 function abrirImportSelector(){
-  var h='<div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">'
+  var h='<div style="background:linear-gradient(135deg,#1e293b,#22263a);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid #3a3f5c">'
+    +'<div style="font-size:13px;font-weight:700;margin-bottom:4px">🔗 Conectar banco (Open Finance)</div>'
+    +'<div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Puxa saldos e transações automaticamente via Pluggy — sem precisar importar extrato.</div>'
+    +'<button onclick="conectarBanco()" class="sbtn" style="margin-top:0;width:100%">Conectar</button>'
+    +'</div>';
+  h+='<div style="background:#22263a;border-radius:10px;padding:14px;margin-bottom:10px">'
     +'<div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Conta corrente</div>'
     +'<div style="font-size:12px;color:#7b80a0;margin-bottom:10px">Extrato XLS ou CSV — Itaú, Santander e outros</div>'
     +'<label for="extrato-file-input" class="sbtn" style="margin-top:0;display:block;text-align:center;cursor:pointer" onclick="prepImportExtrato()">Selecionar arquivo</label>'
@@ -1639,6 +1675,466 @@ function abrirImportSelector(){
   }
   document.getElementById('import-sel-content').innerHTML=h;
   document.getElementById('ov-import-select').classList.add('on');
+}
+// ── OPEN FINANCE (Pluggy) ────────────────────────────────
+var PLUGGY_CONNECT_SDK='https://cdn.pluggy.ai/pluggy-connect/v2.11.0/pluggy-connect.js';
+var CONNECT_TOKEN_URL=SUPA_URL+'/functions/v1/connect-token';
+function carregarPluggySDK(cb){
+  if(typeof PluggyConnect!=='undefined'){cb();return;}
+  var s=document.createElement('script');
+  s.src=PLUGGY_CONNECT_SDK;
+  s.onload=function(){cb();};
+  s.onerror=function(){toast('Não foi possível carregar o Pluggy Connect (sem conexão?).');};
+  document.head.appendChild(s);
+}
+async function conectarBanco(){
+  if(!currentUser){toast('Faça login primeiro.');return;}
+  toast('Preparando conexão segura...');
+  try{
+    var hdrs=await authHeaders();
+    var res=await axios.post(CONNECT_TOKEN_URL,{clientUserId:currentUser.id},{headers:hdrs});
+    var token=res.data&&res.data.accessToken;
+    if(!token){toast('Falha ao obter token de conexão.');return;}
+    fechar('ov-import-select');
+    carregarPluggySDK(function(){
+      if(typeof PluggyConnect==='undefined'){toast('Pluggy Connect indisponível.');return;}
+      var connect=new PluggyConnect({
+        connectToken:token,
+        includeSandbox:false, // produção: só bancos reais no widget (sem sandbox)
+        onSuccess:function(itemData){onBancoConectado(itemData);},
+        onError:function(err){console.error('Pluggy error',err);toast('Erro na conexão com o banco.');}
+      });
+      connect.init();
+    });
+  }catch(e){
+    console.error(e);
+    var d=e&&e.response&&e.response.data;
+    toast('Erro ao conectar: '+((d&&(d.error||d.detail))||e.message||'desconhecido'));
+  }
+}
+function onBancoConectado(itemData){
+  var item=(itemData&&itemData.item)||itemData;
+  var itemId=item&&item.id;
+  if(!itemId){toast('Conexão concluída, mas sem itemId retornado.');return;}
+  if(!db.pluggyItems)db.pluggyItems=[];
+  if(db.pluggyItems.indexOf(itemId)<0)db.pluggyItems.push(itemId);
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  var def=(item.connector&&item.connector.name)||'Banco';
+  db.pluggyItemNames[itemId]=(prompt('Nome deste banco/conexão:',def)||def).trim()||def;
+  log('pluggy_item',{itemId:itemId,connector:item.connector&&item.connector.name,nome:db.pluggyItemNames[itemId]});
+  salvar();
+  toast('✓ Banco "'+db.pluggyItemNames[itemId]+'" conectado! Clique em 🔄 Sincronizar.');
+}
+var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
+// Adiciona manualmente um itemId (ex.: um item sandbox criado via API para teste).
+// Lista as conexões (bancos) com opção de renomear — cada conexão Pluggy = 1 banco.
+function renderLabConns(){
+  var el=document.getElementById('lab-conns');if(!el)return;
+  var items=db.pluggyItems||[];
+  if(!items.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="font-size:11px;color:#7b80a0;margin:8px 0 2px">Conexões (1 por banco):</div>'
+    +items.map(function(id){
+      var nome=(db.pluggyItemNames&&db.pluggyItemNames[id])||'(sem nome)';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">'
+        +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏦 '+escHtml(nome)+' <span style="color:#7b80a0;font-size:10px">'+String(id).slice(0,8)+'…</span></span>'
+        +'<button onclick="renomearConexao(\''+id+'\')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #3a3f5c;background:#22263a;color:#a5b4fc;cursor:pointer">Renomear</button>'
+        +'</div>';
+    }).join('');
+}
+function renomearConexao(id){
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  var nome=(prompt('Nome do banco/conexão:',db.pluggyItemNames[id]||'')||'').trim();
+  if(!nome)return;
+  db.pluggyItemNames[id]=nome;
+  // Atualiza também as contas já criadas a partir desta conexão.
+  (db.contas||[]).forEach(function(ct){if(ct.itemId===id)ct.nome=nome;});
+  salvar();renderLabConns();render();
+  toast('✓ Renomeado para "'+nome+'".');
+}
+// ── Configuração de importação (o que importar + de→para de cartões) ──
+var impCfgBuf=[],impCfgConn={};
+async function abrirConfigImport(){
+  if(!currentUser){toast('Faça login primeiro.');return;}
+  var items=db.pluggyItems||[];
+  if(!items.length){toast('Conecte um banco primeiro.');return;}
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  document.getElementById('imp-cfg-content').innerHTML='<div style="color:#7b80a0;font-size:12px">Buscando contas...</div>';
+  document.getElementById('ov-imp-cfg').classList.add('on');
+  try{
+    var hdrs=await authHeaders();impCfgBuf=[];impCfgConn={};
+    items.forEach(function(id){impCfgConn[id]=(db.pluggyItemNames&&db.pluggyItemNames[id])||'';});
+    for(var i=0;i<items.length;i++){
+      var id=items[i];
+      var res=await axios.post(SYNC_URL,{itemId:id,accountsOnly:true},{headers:hdrs});
+      var d=res.data||{};
+      var banco=(db.pluggyItemNames&&db.pluggyItemNames[id])||(d.item&&d.item.connector)||'Banco';
+      if(d.error||(d.item&&d.item.error)){impCfgBuf.push({itemId:id,banco:banco,erro:String(d.detail||d.error||JSON.stringify(d.item&&d.item.error))});continue;}
+      (d.accounts||[]).forEach(function(a){
+        var prev=db.pluggyAccs[a.id]||{},isCred=(a.type==='CREDIT');
+        var autoCc='new';
+        if(isCred){var na=dkNorm(a.name||'');var m=(db.cartoes||[]).find(function(c){return dkNorm(c.nome)===na;})||(db.cartoes||[]).find(function(c){return na&&(dkNorm(c.nome).indexOf(na)>=0||na.indexOf(dkNorm(c.nome))>=0);});if(m)autoCc=m.id;}
+        impCfgBuf.push({plAccId:a.id,itemId:id,banco:banco,tipo:a.type,name:a.name,number:a.number,
+          nome:(prev.nome!=null?prev.nome:(a.name||banco)),
+          incluir:(prev.incluir!=null?prev.incluir:true),
+          ccId:(prev.ccId!=null?prev.ccId:(isCred?autoCc:null))});
+      });
+    }
+    renderConfigImport();
+  }catch(e){
+    var dd=e&&e.response&&e.response.data;
+    document.getElementById('imp-cfg-content').innerHTML='<div style="color:#f87171;font-size:12px">Erro ao buscar contas: '+escHtml(String((dd&&(dd.detail||dd.error))||e.message||''))+'</div>';
+  }
+}
+function renderConfigImport(){
+  var byItem={},order=[];
+  impCfgBuf.forEach(function(a){if(!byItem[a.itemId]){byItem[a.itemId]=[];order.push(a.itemId);}byItem[a.itemId].push(a);});
+  var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:3px 5px';
+  var h=order.map(function(id){
+    var banco=(db.pluggyItemNames&&db.pluggyItemNames[id])||'Banco',inner='';
+    byItem[id].forEach(function(a){
+      if(a.erro){inner+='<div style="font-size:11px;color:#f87171;padding:6px 0">⚠️ '+escHtml(a.erro).slice(0,160)+'</div>';return;}
+      if(a.tipo==='CREDIT'){
+        inner+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a2f4a">'
+          +'<span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">💳 '+escHtml(a.name||'Cartão')+(a.number?' <span style="color:#7b80a0;font-size:10px">'+escHtml(String(a.number))+'</span>':'')+'</span>'
+          +'<select onchange="cfgSetCard(\''+a.plAccId+'\',this.value)" style="'+selSt+'">'
+          +(db.cartoes||[]).map(function(c){return '<option value="'+c.id+'"'+(a.ccId==c.id?' selected':'')+'>'+escHtml(c.nome)+'</option>';}).join('')
+          +'<option value="new"'+(a.ccId==='new'?' selected':'')+'>➕ Criar novo</option>'
+          +'<option value="ignore"'+(a.ccId==='ignore'?' selected':'')+'>🚫 Não importar</option>'
+          +'</select></div>';
+      }else{
+        inner+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a2f4a">'
+          +'<input type="checkbox"'+(a.incluir?' checked':'')+' onchange="cfgSetIncluir(\''+a.plAccId+'\',this.checked)" style="width:16px;height:16px;flex:none" title="Importar esta conta">'
+          +'<span style="flex:none">🏦</span>'
+          +'<input value="'+escHtml(a.nome)+'" onchange="cfgSetNome(\''+a.plAccId+'\',this.value)" style="flex:1;min-width:0;'+selSt+'">'
+          +(a.number?'<span style="color:#7b80a0;font-size:10px;flex:none">'+escHtml(String(a.number))+'</span>':'')
+          +'</div>';
+      }
+    });
+    return '<div style="margin-bottom:14px">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+        +'<span style="font-size:12px;flex:none">🔗</span>'
+        +'<input value="'+escHtml(impCfgConn[id]!=null?impCfgConn[id]:banco)+'" onchange="cfgSetConn(\''+id+'\',this.value)" placeholder="Nome do banco" style="flex:1;min-width:0;'+selSt+';font-weight:700;color:#a5b4fc" title="Nome da conexão (banco)">'
+      +'</div>'
+      +inner+'</div>';
+  }).join('');
+  document.getElementById('imp-cfg-content').innerHTML=h||'<div style="color:#7b80a0;font-size:12px">Nenhuma conta encontrada.</div>';
+}
+function cfgFind(id){return impCfgBuf.find(function(a){return a.plAccId===id;});}
+function cfgSetConn(itemId,v){impCfgConn[itemId]=v;}
+function cfgSetIncluir(id,c){var a=cfgFind(id);if(a)a.incluir=c;}
+function cfgSetNome(id,v){var a=cfgFind(id);if(a)a.nome=v;}
+function cfgSetCard(id,v){var a=cfgFind(id);if(a)a.ccId=(v==='new'||v==='ignore')?v:(+v);}
+function salvarConfigImport(){
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  // Nomes das conexões (bancos) + propaga p/ contas já criadas.
+  Object.keys(impCfgConn).forEach(function(id){
+    var nm=(impCfgConn[id]||'').trim();if(!nm)return;
+    db.pluggyItemNames[id]=nm;
+    (db.contas||[]).forEach(function(ct){if(ct.itemId===id)ct.nome=nm;});
+  });
+  impCfgBuf.forEach(function(a){
+    if(a.erro)return;
+    var banco=(db.pluggyItemNames[a.itemId])||a.banco;
+    db.pluggyAccs[a.plAccId]={itemId:a.itemId,banco:banco,tipo:a.tipo,name:a.name,number:a.number,nome:a.nome,incluir:a.incluir,ccId:a.ccId,configurado:true};
+  });
+  salvar();fechar('ov-imp-cfg');render();
+  toast('✓ Configuração salva.');
+}
+// Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
+// NÃO mescla nada ainda — fase de validação do formato real.
+async function sincronizarBanco(){
+  if(!currentUser){toast('Faça login primeiro.');return;}
+  var items=(db.pluggyItems||[]);
+  if(!items.length){toast('Conecte um banco primeiro (🔗 Conectar banco).');return;}
+  // Exige configuração: só importa contas configuradas (BANK incluir / CREDIT != ignore).
+  var accs=db.pluggyAccs||{};
+  var importable=Object.keys(accs).filter(function(k){var a=accs[k];if(!a||!a.configurado)return false;return a.tipo==='CREDIT'?a.ccId!=='ignore':!!a.incluir;});
+  if(!importable.length){toast('Configure o que importar primeiro (⚙️ Configurar contas & cartões).');abrirConfigImport();return;}
+  toast('Buscando transações...');
+  try{
+    var hdrs=await authHeaders();
+    var fromDate=(document.getElementById('sync-from')||{}).value||'';
+    var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0},item:null};
+    for(var i=0;i<items.length;i++){
+      var res=await axios.post(SYNC_URL,{itemId:items[i],from:fromDate,accountIds:importable},{headers:hdrs});
+      var d=res.data||{};
+      // Log detalhado por item — copie da tela de log (Config) e me envie.
+      log('pluggy_sync_item',{
+        item:String(items[i]).slice(0,8),
+        status:d.item&&d.item.status,
+        exec:d.item&&d.item.executionStatus,
+        connector:d.item&&d.item.connector,
+        itemError:d.item&&d.item.error,
+        respError:d.error||null, detail:d.detail||null,
+        from:d.from, to:d.to,
+        contas:(d.accounts||[]).map(function(a){return {type:a.type,sub:a.subtype,tx:a.txCount,bal:a.balance};}),
+        nTx:(d.transactions||[]).length,
+        exTx:(d.transactions||[]).slice(0,3).map(function(t){return {date:t.date,desc:t.description,amount:t.amount,type:t.type};})
+      });
+      if(d.error){toast('Erro: '+(d.detail||d.error));return;}
+      if(d.item)all.item=d.item;
+      var banco=(db.pluggyItemNames&&db.pluggyItemNames[items[i]])||(d.item&&d.item.connector)||'Banco';
+      (d.accounts||[]).forEach(function(a){var cfg=(db.pluggyAccs||{})[a.id]||{};a.banco=(a.type!=='CREDIT'&&cfg.nome)?cfg.nome:banco;a.plItemId=items[i];});
+      all.accounts=all.accounts.concat(d.accounts||[]);
+      all.transactions=all.transactions.concat(d.transactions||[]);
+    }
+    all.counts={accounts:all.accounts.length,transactions:all.transactions.length};
+    log('pluggy_sync',{itens:items.length,contas:all.counts.accounts,tx:all.counts.transactions});
+    mostrarPreviewSync(all);
+  }catch(e){
+    console.error(e);
+    var dd=e&&e.response&&e.response.data;
+    log('pluggy_sync_erro',{msg:e.message,status:e&&e.response&&e.response.status,detail:dd&&(dd.detail||dd.error)});
+    toast('Erro ao sincronizar: '+((dd&&(dd.detail||dd.error))||e.message||'desconhecido'));
+  }
+}
+// ── Mapeamento Pluggy → modelo do app (validado em pluggy/merge-test.js) ──
+var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={},syncFixosSup=[];
+function mapCatPluggy(plCat,desc,tipo){
+  var c=(plCat||'').toLowerCase();
+  if(tipo==='r'){
+    if(/salary|paycheck|payroll|retirement|pension/.test(c))return 'Salário';
+    if(/invest|interest|dividend|yield/.test(c))return 'Investimentos';
+    if(/freelanc|self-?employ/.test(c))return 'Freelance';
+    return 'Outros';
+  }
+  if(/rent|mortgage|housing|condomin|real estate|home/.test(c))return 'Moradia';
+  if(/electric|water|gas bill|utilit|telecom|internet|phone|mobile|cable/.test(c))return 'Moradia';
+  if(/food|drink|restaurant|supermarket|grocer|bar|coffee|fast food/.test(c))return 'Alimentação';
+  if(/transport|fuel|gas station|taxi|ride|uber|parking|toll|mobility|public transport/.test(c))return 'Transporte';
+  if(/health|pharmac|doctor|hospital|dentist|medical|gym|fitness/.test(c))return 'Saúde';
+  if(/stream|entertain|movie|game|leisure|travel|hotel|music|video|hobby/.test(c))return 'Lazer';
+  if(/educat|school|course|book|tuition/.test(c))return 'Educação';
+  if(/cloth|apparel|shoe|fashion/.test(c))return 'Vestuário';
+  return 'Outros';
+}
+function isCardPaymentPl(cat,desc){
+  var s=((cat||'')+' '+(desc||'')).toLowerCase();
+  return /credit card payment|pagamento.*fatura|fatura.*cart|pagto.*cart/.test(s);
+}
+// Dedup contra dados existentes por DATA + VALOR (nomes variam entre extrato e Pluggy).
+function syncDVKey(data,val){return data+'|'+Math.round(Math.abs(val)*100);}
+function shiftMonth(ds,k){var p=(ds||'').split('-');var d=new Date(+p[0],(+p[1]-1)+k,+p[2]);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function buildSyncCandidates(data,existing,existDV){
+  var out=[],skipped=0,groups={};
+  var accById={};(data.accounts||[]).forEach(function(a){accById[a.id]=a;});
+  var cfg=db.pluggyAccs||{};
+  (data.transactions||[]).forEach(function(t){
+    if(t.plId&&existing[t.plId]){skipped++;return;} // já mesclado antes (mesmo plId)
+    var val=Math.abs(t.amount);
+    var isCred=(t.accountType==='CREDIT');
+    var inst=(t.installment&&t.installment.total>1)?t.installment:null;
+    // Parcelamento no cartão: agrupa por compra → 1 candidato só (replicado no merge).
+    if(isCred&&inst){
+      // A descrição já traz o nº da parcela (ex.: "SunoM12/12") → remove p/ agrupar.
+      var base=(t.description||'').replace(/\s*\d{1,2}\/\d{1,2}\s*$/,'').trim()||t.description;
+      var gk=t.accountId+'|'+dkNorm(base)+'|'+inst.total+'|'+Math.round(val*100);
+      if(!groups[gk]){
+        groups[gk]={accountId:t.accountId,desc:base,val:val,total:inst.total,
+          cat:mapCatPluggy(t.category,base,'e'),repN:inst.n,repDate:t.date,plIds:[]};
+        out.push({__group:gk});
+      }
+      var g=groups[gk];g.plIds.push(t.plId);
+      if(inst.n<g.repN){g.repN=inst.n;g.repDate=t.date;}
+      return;
+    }
+    var dv=existDV&&existDV[syncDVKey(t.date,val)]; // mesmo dia + mesmo valor de um lançamento existente
+    if(isCred){
+      var s=((t.category||'')+' '+(t.description||'')).toLowerCase();
+      var isPay=isCardPaymentPl(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s);
+      var flag=dv?'ja_existe':(isPay?'card_credit':null);
+      out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
+        cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',ccId:(cfg[t.accountId]||{}).ccId,
+        plId:t.plId,flag:flag,dupOf:dv||null,checked:!flag});
+    }else{
+      var tipo=(t.amount<0)?'e':'r';
+      var f=dv?'ja_existe':(isCardPaymentPl(t.category,t.description)?'card_payment':null);
+      var acc=accById[t.accountId]||{};
+      out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
+        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,dupOf:dv||null,checked:!f,
+        plAccId:t.accountId,banco:acc.banco||'Banco',plItemId:acc.plItemId});
+    }
+  });
+  // Materializa os candidatos de parcelamento (1 linha por compra).
+  out=out.map(function(o){
+    if(!o.__group)return o;
+    var g=groups[o.__group];var firstDate=shiftMonth(g.repDate,-(g.repN-1));
+    return {target:'cc',accountId:g.accountId,desc:g.desc,val:g.val,data:firstDate,cat:g.cat,titular:'eu',ccId:(cfg[g.accountId]||{}).ccId,
+      installmentGroup:{total:g.total,firstDate:firstDate},plIds:g.plIds,plId:g.plIds[0],flag:null,checked:true};
+  });
+  return {candidates:out,skipped:skipped};
+}
+function mostrarPreviewSync(data){
+  syncData=data;
+  var existing={},existDV={};
+  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existDV[syncDVKey(l.data,l.val)]=l.desc;});
+  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existDV[syncDVKey(l.data,l.val)]=l.desc;});
+  if(db.pluggySeen)Object.keys(db.pluggySeen).forEach(function(p){existing[p]=true;});
+  var r=buildSyncCandidates(data,existing,existDV);
+  syncCands=r.candidates;syncSkipped=r.skipped;
+  // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
+  var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.tipo==='e')mks[(c.data||'').substring(0,7)]=true;});
+  syncFixosSup=[];
+  Object.keys(mks).sort().forEach(function(mk){
+    var p=mk.split('-'),m=parseInt(p[1]),y=parseInt(p[0]);
+    fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
+      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:false});
+    });
+  });
+  renderSyncPreview();
+  document.getElementById('ov-sync').classList.add('on');
+}
+function toggleSyncFixo(i,c){if(syncFixosSup[i])syncFixosSup[i].checked=c;}
+function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
+function toggleSyncCand(i){if(!syncCands[i])return;syncCands[i].checked=!syncCands[i].checked;var b=document.getElementById('sync-merge-btn');if(b){var n=syncCands.filter(function(x){return x.checked;}).length;b.textContent='Mesclar '+n+' selecionado'+(n!==1?'s':'');b.disabled=!n;}}
+function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
+function titLabel(t){return t==='fam'?'👥 Família':'👤 Eu';}
+function toggleSyncTit(i){var c=syncCands[i];if(!c)return;c.titular=(c.titular==='fam')?'eu':'fam';var b=document.getElementById('tit-'+i);if(b){b.textContent=titLabel(c.titular);b.style.color=(c.titular==='fam')?'#fbbf24':'#a5b4fc';}}
+function syncCatOpts(c){
+  var isR=(c.tipo==='r');var cats=(isR?(db.catsR||[]):(db.catsE||[])).slice();
+  if(c.cat&&cats.indexOf(c.cat)<0)cats.unshift(c.cat);
+  return cats.map(function(x){return '<option'+(x===c.cat?' selected':'')+'>'+escHtml(x)+'</option>';}).join('');
+}
+function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
+function syncRowHTML(c,selSt){
+  var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+'/'+dp[1]):(c.data||'');
+  var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
+  var parcTag=c.installmentGroup?'<span style="font-size:9px;background:rgba(129,140,248,.2);color:#a78bfa;border-radius:3px;padding:1px 4px;flex-shrink:0">'+c.installmentGroup.total+'x</span>':'';
+  var dupNote=c.flag==='ja_existe'?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="'+(c.dupOf?'Já lançado como: '+escHtml(c.dupOf):'possível duplicata')+'">⚠️ dup?</span>':((c.flag&&c.flag!=='ja_existe')?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="'+escHtml(flagNota(c.flag))+'">⚠️</span>':'');
+  var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:rgba(129,140,248,.2);color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+(c.titular==='fam'?'FAM':'EU')+'</button>'):'';
+  return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a;'+(c.flag?'opacity:.6':'')+'">'
+    +'<input type="checkbox"'+(c.checked?' checked':'')+' onchange="toggleSyncCand('+c._i+')" style="flex-shrink:0;width:18px;height:18px">'
+    +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+dl+'</span>'
+    +parcTag+dupNote
+    +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var e=s.whiteSpace===\'normal\';s.whiteSpace=e?\'nowrap\':\'normal\';s.overflow=e?\'hidden\':\'visible\'">'+escHtml(c.desc||'—')+'</span>'
+    +'<select onchange="setSyncCat('+c._i+',this.value)" style="flex-shrink:0;width:104px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'+syncCatOpts(c)+'</select>'
+    +titBtn
+    +'<span style="font-size:12px;font-weight:700;color:'+cor+';flex-shrink:0;min-width:60px;text-align:right">'+(isR?'+':'-')+fmt(c.val)+'</span>'
+    +'</div>';
+}
+function renderSyncPreview(){
+  var data=syncData,it=data.item,h='';
+  var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
+  if(it){
+    var st=it.status||'?';var stCor=(st==='UPDATED')?'#34d399':(st==='UPDATING')?'#fbbf24':'#f87171';
+    h+='<div style="background:#22263a;border-radius:8px;padding:8px;margin-bottom:8px;font-size:11px">Item: <b style="color:'+stCor+'">'+escHtml(st)+'</b>'
+      +(it.connector?' · '+escHtml(it.connector):'')+'</div>';
+    if(it.error&&/not.?found|404|ITEM_NOT_FOUND/i.test(JSON.stringify(it.error)))
+      h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado. Use 🧹 Limpar conexões e reconecte com "Pluggy Bank".</div>';
+  }
+  h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · '+syncSkipped+' já no app (ignoradas)</div>';
+  if(syncFixosSup.length){
+    h+='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:8px">'
+      +'<div style="font-size:11px;font-weight:600;color:#fbbf24;margin-bottom:8px">⚠️ Fixos do período — marque os que já vieram do banco para não duplicar</div>'
+      +syncFixosSup.map(function(f,i){var p=f.mk.split('-'),mes=MESES[+p[1]-1]+'/'+p[0];
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a;cursor:pointer">'
+          +'<input type="checkbox" '+(f.checked?'checked':'')+' onchange="toggleSyncFixo('+i+',this.checked)" style="width:16px;height:16px;flex:none">'
+          +'<span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
+          +'<span style="font-size:10px;color:#7b80a0;flex:none">'+mes+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:#f87171;flex:none">-'+fmt(f.val)+'</span></label>';
+      }).join('')+'</div>';
+  }
+  syncCands.forEach(function(c,i){c._i=i;});
+  // Conta corrente → uma subseção por CONTA (cada conta da Pluggy), rotulada pelo banco.
+  var lancsCands=syncCands.filter(function(c){return c.target==='lancs';});
+  if(lancsCands.length){
+    var byAcc={},order=[];
+    lancsCands.forEach(function(c){var k=c.plAccId||'?';if(!byAcc[k]){byAcc[k]=[];order.push(k);}byAcc[k].push(c);});
+    var nameCount={};
+    order.forEach(function(k){
+      var banco=(byAcc[k][0].banco)||'Banco';
+      nameCount[banco]=(nameCount[banco]||0)+1;
+      var label=banco+(nameCount[banco]>1?' '+nameCount[banco]:''); // desambigua contas do mesmo banco
+      var lst=byAcc[k].sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
+      h+='<div style="margin:12px 0 4px;font-size:13px;font-weight:700;color:#a5b4fc;border-bottom:1px solid #3a3f5c;padding-bottom:3px">🏦 '+escHtml(label)+' <span style="font-size:11px;color:#7b80a0;font-weight:400">· '+lst.length+' lançamento'+(lst.length!==1?'s':'')+'</span></div>';
+      lst.forEach(function(c){h+=syncRowHTML(c,selSt);});
+    });
+  }
+  // Cartão
+  var ccCands=syncCands.filter(function(c){return c.target==='cc';}).sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
+  if(ccCands.length){
+    h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">💳 Cartão → Fatura ('+ccCands.length+')</div>';
+    ccCands.forEach(function(c){h+=syncRowHTML(c,selSt);});
+  }
+  if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';
+  var nCheck=syncCands.filter(function(c){return c.checked;}).length;
+  h+='<button id="sync-merge-btn" class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
+  document.getElementById('sync-content').innerHTML=h;
+}
+function confirmarMergeSync(){
+  var cands=syncCands.filter(function(c){return c.checked;});
+  if(!cands.length){toast('Nada selecionado.');return;}
+  if(!db.pluggySeen)db.pluggySeen={};
+  if(!db.contas)db.contas=[];
+  if(!db.pluggyAccs)db.pluggyAccs={};
+  // Resolve o cartão (de→para) de cada conta CREDIT pela CONFIG: existente | criar | ignorar.
+  var cardResolved={};
+  function resolveCard(c){
+    var accId=c.accountId;
+    if(cardResolved[accId]!=null)return cardResolved[accId];
+    var sel=(db.pluggyAccs[accId]||{}).ccId,ccId;
+    if(sel==='ignore'){cardResolved[accId]='ignore';return 'ignore';}
+    if(sel!=null&&sel!=='new'&&db.cartoes.some(function(x){return x.id===+sel;}))ccId=+sel;
+    else{var nome=(db.pluggyAccs[accId]||{}).name||'Cartão';var nc={id:db.nid++,nome:nome,limite:0,fecha:1,vence:10};db.cartoes.push(nc);ccId=nc.id;if(db.pluggyAccs[accId])db.pluggyAccs[accId].ccId=ccId;}
+    cardResolved[accId]=ccId;return ccId;
+  }
+  // Resolve conta bancária por plAccId (cria com o nome do banco se faltar).
+  function resolveConta(c){
+    if(!c.plAccId)return null;
+    var ct=db.contas.find(function(x){return x.plAccId===c.plAccId;});
+    if(!ct){
+      var base=c.banco||'Banco',nome=base,n=2;
+      while(db.contas.some(function(x){return x.nome===nome;}))nome=base+' '+(n++); // evita nomes iguais
+      ct={id:db.nid++,nome:nome,plAccId:c.plAccId,itemId:c.plItemId};db.contas.push(ct);
+    }
+    return ct.id;
+  }
+  var existParc={};db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;});
+  var addL=0,addC=0,novosBank=[];
+  cands.forEach(function(c){
+    if(c.target==='lancs'){
+      var nl={id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,contaId:resolveConta(c),csvKey:c.data+'|'+c.desc+'|'+c.val};
+      db.lancs.push(nl);if(c.tipo==='e')novosBank.push(nl);addL++;
+      return;
+    }
+    var ccId=resolveCard(c);
+    if(ccId==='ignore')return;
+    if(c.installmentGroup){
+      // Replica a compra parcelada em N meses (1 débito → N parcelas), como no import de fatura.
+      var g=c.installmentGroup,pid='pl'+ccId+'§'+dkNorm(c.desc)+'§'+g.total;
+      for(var i=1;i<=g.total;i++){
+        var d=shiftMonth(g.firstDate,i-1),key=ccParcKeyParts(ccId,c.desc,c.val,i,g.total);
+        if(existParc[key])continue; // já existe (manual ou sync anterior)
+        db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:d,cat:c.cat,titular:c.titular||'eu',
+          sub:'pa',pn:i,pt:g.total,pid:pid,plId:(i===1?c.plId:undefined),csvKey:d+'|'+c.desc+'|'+c.val});
+        existParc[key]=true;addC++;
+      }
+      (c.plIds||[]).forEach(function(p){if(p)db.pluggySeen[p]=true;});
+      return;
+    }
+    db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',
+      sub:'av',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addC++;
+  });
+  // Suprime fixos marcados (já vieram do banco), vinculando ao débito real p/ o comprometimento.
+  var suprimidos=syncFixosSup.filter(function(f){return f.checked;}),usados={};
+  suprimidos.forEach(function(f){
+    var best=null,bestDiff=Infinity,bestCat=false;
+    novosBank.forEach(function(l){
+      if(usados[l.id])return;var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
+      if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
+    });
+    var subVal=0;if(best){usados[best.id]=true;best.subGid=f.gid;subVal=best.val;}
+    var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
+    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
+    if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
+  });
+  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length});
+  syncFaturas();salvar();render();
+  fechar('ov-sync');
+  var msg='✓ Mesclado: '+addL+' em conta corrente + '+addC+' no cartão.';
+  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo(s) suprimido(s).';
+  toast(msg);
 }
 function selecionarArquivoCartao(ccId){
   curCCId=ccId;
@@ -2050,6 +2546,9 @@ function lerPDFFatura(file,password){
 }
 function parsearFaturaSantander(lines,existingKeys){
   var items=[],dupCount=0;
+  var ccId=fatCCId,existParc={},existVD={};
+  // Em conferência não deduplica (queremos a fatura inteira p/ comparar), igual a existingKeys.
+  if(!conferindoFatura)db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // Inferir mês/ano pelo primeiro DD/MM/YYYY encontrado (vencimento)
   var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
   for(var i=0;i<lines.length&&i<25;i++){
@@ -2106,21 +2605,28 @@ function parsearFaturaSantander(lines,existingKeys){
       csvKey=data+'|'+desc+'|'+valAbs;
     }
     if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
+    if(isParcela&&existParc[ccParcKeyParts(ccId,desc,valAbs,pn,pt)]){dupCount++;continue;}
     // Parcelas futuras (pn+1 até pt)
     var futureDates=[];
     if(isParcela){
       for(var fk=1;fk<=pt-pn;fk++){
         var fd=billingDate(fk);
         var fcsv=fd+'|'+desc+'|'+valAbs;
-        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
+        futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]||!!existParc[ccParcKeyParts(ccId,desc,valAbs,pn+fk,pt)]});
       }
     }
-    items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+    var softDup=(!isParcela)?existVD[dkNorm(desc)+'|'+Math.round(valAbs*100)]:null;
+    items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:!softDup,softDupDescs:softDup?[softDup]:null,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
   }
   return{items:items,dupCount:dupCount};
 }
 function parsearFaturaItau(lines,existingKeys){
   var items=[],dupCount=0;
+  // Dedup cruzada (ex.: mesmo cartão já veio da Pluggy): parcela por ccParcKey (sem data),
+  // não-parcela por valor+descrição normalizada. fatCCId = cartão alvo do PDF.
+  var ccId=fatCCId,existParc={},existVD={};
+  // Em conferência não deduplica (queremos a fatura inteira p/ comparar), igual a existingKeys.
+  if(!conferindoFatura)db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // PDF.js insere espaços entre caracteres especiais ("Lan ç amentos").
   // Normalizar removendo espaços é essencial para detectar seções.
   function norm(s){return s.replace(/\s+/g,'');}
@@ -2189,15 +2695,19 @@ function parsearFaturaItau(lines,existingKeys){
         csvKey=data+'|'+desc+'|'+valAbs;
       }
       if(existingKeys[ccDKey(data,desc,valAbs)]){dupCount++;continue;}
+      // Parcela já existente (qualquer fonte, inclusive Pluggy) → identidade sem data.
+      if(isParcela&&existParc[ccParcKeyParts(ccId,desc,valAbs,pn,pt)]){dupCount++;continue;}
       var futureDates=[];
       if(isParcela){
         for(var fk=1;fk<=pt-pn;fk++){
           var fd=billingDate(fk);
           var fcsv=fd+'|'+desc+'|'+valAbs;
-          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]});
+          futureDates.push({data:fd,csvKey:fcsv,pn:pn+fk,pt:pt,dup:!!existingKeys[ccDKey(fd,desc,valAbs)]||!!existParc[ccParcKeyParts(ccId,desc,valAbs,pn+fk,pt)]});
         }
       }
-      items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:true,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
+      // Não-parcela: mesmo valor+descrição já no cartão (data pode diferir entre fontes) → soft dup.
+      var softDup=(!isParcela)?existVD[dkNorm(desc)+'|'+Math.round(valAbs*100)]:null;
+      items.push({data:data,origData:origData,desc:desc,cat:autoCatExtrato(desc,'e'),val:valAbs,tipo:'e',csvKey:csvKey,include:!softDup,softDupDescs:softDup?[softDup]:null,isFatura:false,isParcela:isParcela,pn:pn,pt:pt,futureDates:futureDates});
     }
   }
   return{items:items,dupCount:dupCount};
@@ -2216,8 +2726,9 @@ function itemLancHTML(l){
       +(exp?drillFaturaHTML(l):'');
   }
   var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>'+(l.pago?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px" title="Parcela paga (pagamento real reconciliado)">✓ pago</span>':''):l.sub==='imp'?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px">EXT</span>':'';
+  var contaTag=l.contaId?(' · 🏦 '+escHtml(contaNome(l.contaId))):'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)')+'">'+emo(l.cat)+'</div>'
-    +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
+    +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+contaTag+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#34d399':'#f87171')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'
     +'<button class="ebtn" onclick="abrirEditarLanc('+l.id+')">✏️</button></div>';
 }
@@ -2292,19 +2803,44 @@ function renderDash(){
   document.getElementById('d-cc-card').innerHTML=ccH;
 }
 
+var lancFiltroConta=null; // null=todas | contaId(number) | 'sem'
+function contaNome(id){var c=(db.contas||[]).find(function(x){return x.id===id;});return c?c.nome:'Conta';}
+function setLancFiltro(v){lancFiltroConta=v;renderLancs();}
+function lancChip(v,label){
+  var active=(v===lancFiltroConta);
+  var arg=(v===null)?'null':(v==='sem')?"'sem'":v;
+  return '<button onclick="setLancFiltro('+arg+')" style="font-size:11px;padding:4px 10px;border-radius:14px;border:1px solid '+(active?'#818cf8':'#3a3f5c')+';background:'+(active?'rgba(129,140,248,.2)':'#22263a')+';color:'+(active?'#a5b4fc':'#9aa0c0')+';cursor:pointer;font-weight:600">'+label+'</button>';
+}
 function renderLancs(){
   var mk=mesKey(curM,curY);var fixMes=fixosVigentes(curM,curY);
-  var list=lancsDoMes(curM,curY).sort(function(a,b){return b.data.localeCompare(a.data);});
-  var h='';
-  if(fixMes.length)h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';
+  var full=lancsDoMes(curM,curY).sort(function(a,b){return b.data.localeCompare(a.data);});
+  // Chips de filtro por conta (contas presentes no mês + "Sem conta" se houver)
+  var comConta={},temSem=false;
+  full.forEach(function(l){if(l.contaId)comConta[l.contaId]=true;else temSem=true;});
+  var contasMes=(db.contas||[]).filter(function(c){return comConta[c.id];});
+  var chips='';
+  if(contasMes.length){
+    chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+      +lancChip(null,'Todas')
+      +contasMes.map(function(c){return lancChip(c.id,'🏦 '+escHtml(c.nome));}).join('')
+      +(temSem?lancChip('sem','Sem conta'):'')
+      +'</div>';
+  }
+  // Aplica filtro
+  var list=full;
+  if(lancFiltroConta==='sem')list=full.filter(function(l){return !l.contaId;});
+  else if(lancFiltroConta!=null)list=full.filter(function(l){return l.contaId===lancFiltroConta;});
+  var h=chips;
+  // Fixos do mês só quando sem filtro de conta (fixos são planejados, não pertencem a uma conta)
+  if(lancFiltroConta==null&&fixMes.length)h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';
   if(list.length){
     var recs=list.filter(function(l){return l.tipo==='r';});var exps=list.filter(function(l){return l.tipo==='e';});
     h+='<div class="card">';
     if(recs.length)h+='<div class="sec">↑ Receitas</div>'+recs.map(itemLancHTML).join('');
     if(exps.length)h+='<div class="sec">↓ Despesas</div>'+exps.map(itemLancHTML).join('');
     h+='</div>';
-  }
-  document.getElementById('l-list').innerHTML=h||'<div class="empty">Sem lançamentos neste mês.</div>';
+  }else h+='<div class="empty">Sem lançamentos'+(lancFiltroConta!=null?' nesta conta':' neste mês')+'.</div>';
+  document.getElementById('l-list').innerHTML=h;
 }
 function renderFixos(){
   var el=document.getElementById('fix-list');
@@ -2816,7 +3352,7 @@ async function iniciarDados(){
   try{
     var hdrs = await authHeaders();
     hdrs['Prefer'] = 'resolution=ignore-duplicates';
-    await axios.post(SUPA_URL+'/rest/v1/financas', {user_id: currentUser.id, dados: db}, {headers:hdrs});
+    await axios.post(SUPA_URL+'/rest/v1/'+TABLE, {user_id: currentUser.id, dados: db}, {headers:hdrs});
   }catch(e){}
 }
 

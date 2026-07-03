@@ -4,3 +4,6 @@ pluggy/.env
 supabase/.env
 *.env.local
 node_modules/
+
+# Supabase CLI temp
+supabase/.temp/

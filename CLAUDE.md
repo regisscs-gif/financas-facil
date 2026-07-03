@@ -11,8 +11,8 @@ Deployed at: `https://regisscs-gif.github.io/financas-facil` (GitHub Pages, repo
 Two users with separate Supabase accounts: **Régis** (Itaú + Nubank) and **Carla** (Santander). Features must work for both banks.
 
 ### Repository layout
-- **`index.html`** — the **production** app (single-file). Currently **FROZEN** (see Pluggy section).
-- **`lab.html`** — parallel copy of `index.html` where the **Pluggy / Open Finance** integration is being built and validated in isolation. Persists to table `financas_lab`, never touches production data. **This is where active development happens right now.**
+- **`index.html`** — the **production** app (single-file). As of **v101** it includes the promoted **Pluggy / Open Finance** integration (previously built in `lab.html`).
+- **`lab.html`** — parallel copy of `index.html` used as an isolated staging environment (persists to table `financas_lab`, never touches production data). Kept for validating future changes before promotion; scheduled to be retired once production is stable. Still carries LAB-only helpers (Zerar lab, Copiar produção→lab, injeção manual de itemId, `includeSandbox:true`) that must **never** be promoted to `index.html`.
 - **`sw.js`** — service worker (production only; `lab.html` registers none).
 - **`supabase/functions/{connect-token,sync-transactions}/`** — Deno Edge Functions that hold the Pluggy secrets.
 - **`pluggy/*.js`** — local Node scripts to test Pluggy without the browser (read `pluggy/.env`, gitignored).
@@ -47,7 +47,7 @@ supabase secrets set --env-file supabase/.env   # PLUGGY_CLIENT_ID / PLUGGY_CLIE
 
 - **Production (`index.html`):** bump `APP_VERSION` in `index.html` **and** `CACHE` in `sw.js` together on every production commit (must match, e.g. `'v100'` / `'ff-v100'`). Commit format `feat(vN):` / `fix(vN):`. Push to `main` → live in ~1 min.
 - **Lab (`lab.html`):** version is `'v100-lab · build N'` (in `APP_VERSION`, shown in the LAB banner). Bump **build N** on every lab change — it's the only way to confirm a reload picked up new code. Commit format `feat(lab):` / `fix(lab):`. `lab.html` does NOT touch `sw.js` or `index.html`.
-- **Production is currently FROZEN.** Do not edit `index.html` / `sw.js` while the Pluggy work is in the lab. Promotion to production is a separate, deliberate step.
+- **Production is UNFROZEN as of v101** (Pluggy promoted). Regular production edits to `index.html` / `sw.js` resume the normal bump-both rule above. `lab.html` remains the isolated staging copy for risky changes.
 - Docs-only commits (this file) do not bump any version.
 
 ## Architecture
@@ -173,9 +173,9 @@ axios + Supabase load at the top with `integrity` (SRI). **Do not use jsDelivr `
 
 `log(action, data)` writes to `localStorage` (`ff_log`, max 300 entries). When diagnosing bugs, ask the user to copy from Config → Log de atividade → "Copiar log completo".
 
-## Pluggy / Open Finance (in `lab.html` only)
+## Pluggy / Open Finance (promoted to production in v101)
 
-Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura import for connected accounts. **Built and tested in `lab.html` — never in `index.html` — until deliberately promoted.**
+Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura import for connected accounts. **Built and tested in `lab.html`, promoted to `index.html` in v101.** `lab.html` stays as the staging copy for future changes; the LAB-only helpers there (Zerar lab / Copiar produção→lab / injeção manual de itemId / `includeSandbox:true`) are stripped from production `index.html` (which uses `includeSandbox:false`).
 
 **Secrets never reach the browser** (repo is public). Flow: `browser → Supabase Edge Function (holds Pluggy secrets) → Pluggy API`.
 - `connect-token` — `auth → connect_token`; opens the Pluggy Connect widget (SDK pinned `cdn.pluggy.ai/pluggy-connect/v2.11.0`).
@@ -211,6 +211,6 @@ Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura im
 10. Reconciliation must not double-count: a reconciled avulso parcela is `pago` and absorbs its imported debit (one row); never create both. Parcelas are never deleted on reconciliation.
 11. Top-level SRI must point at immutable CDN files, never jsDelivr-minified `.min.js` (see External CDN libraries).
 12. Migration/repair functions are idempotent and guarded by a `db.mig*` flag; to re-apply after a logic change, use a new flag name.
-13. **Do all Pluggy work in `lab.html`, not `index.html`.** `lab.html` persists to `financas_lab`; never point it at `financas`. Bump the LAB `build N` on every lab change.
+13. **Pluggy now lives in production `index.html` (v101).** Use `lab.html` only as staging for risky changes; it persists to `financas_lab` (never point it at `financas`) and keeps LAB-only helpers that must never reach production. When promoting lab→prod again, strip the LAB scaffolding (banner, `financas_lab`, dynamic `redirectTo`, Zerar/Copiar/itemId helpers, `includeSandbox:true`) and re-add the service-worker registration.
 14. Pluggy secrets live only in Edge Function env (Supabase secrets), never in `index.html`/`lab.html`/git. Anything under `pluggy/.env` / `supabase/.env` is gitignored — keep it that way (public repo).
 15. Pluggy dedup uses `plId` (Pluggy×Pluggy) + date/value + `ccParcKey` for installments; card transaction direction comes from keyword detection, not the `amount` sign or `type` field (both unreliable on CREDIT).

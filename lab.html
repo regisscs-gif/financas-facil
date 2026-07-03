@@ -511,7 +511,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 26';
+var APP_VERSION = 'v100-lab · build 27';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -2607,7 +2607,8 @@ function lerPDFFatura(file,password){
 function parsearFaturaSantander(lines,existingKeys){
   var items=[],dupCount=0;
   var ccId=fatCCId,existParc={},existVD={};
-  db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
+  // Em conferência não deduplica (queremos a fatura inteira p/ comparar), igual a existingKeys.
+  if(!conferindoFatura)db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // Inferir mês/ano pelo primeiro DD/MM/YYYY encontrado (vencimento)
   var billingM=curM+1>12?1:curM+1,billingY=curM+1>12?curY+1:curY;
   for(var i=0;i<lines.length&&i<25;i++){
@@ -2684,7 +2685,8 @@ function parsearFaturaItau(lines,existingKeys){
   // Dedup cruzada (ex.: mesmo cartão já veio da Pluggy): parcela por ccParcKey (sem data),
   // não-parcela por valor+descrição normalizada. fatCCId = cartão alvo do PDF.
   var ccId=fatCCId,existParc={},existVD={};
-  db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
+  // Em conferência não deduplica (queremos a fatura inteira p/ comparar), igual a existingKeys.
+  if(!conferindoFatura)db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;if(l.ccId===ccId&&l.sub!=='pa')existVD[dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100)]=l.desc;});
   // PDF.js insere espaços entre caracteres especiais ("Lan ç amentos").
   // Normalizar removendo espaços é essencial para detectar seções.
   function norm(s){return s.replace(/\s+/g,'');}

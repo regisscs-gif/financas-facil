@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 17';
+var APP_VERSION = 'v100-lab · build 18';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1793,7 +1793,7 @@ async function sincronizarBanco(){
   }
 }
 // ── Mapeamento Pluggy → modelo do app (validado em pluggy/merge-test.js) ──
-var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={};
+var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={},syncFixosSup=[];
 function mapCatPluggy(plCat,desc,tipo){
   var c=(plCat||'').toLowerCase();
   if(tipo==='r'){
@@ -1828,10 +1828,12 @@ function buildSyncCandidates(data,existing,existDV){
     var inst=(t.installment&&t.installment.total>1)?t.installment:null;
     // Parcelamento no cartão: agrupa por compra → 1 candidato só (replicado no merge).
     if(isCred&&inst){
-      var gk=t.accountId+'|'+dkNorm(t.description)+'|'+inst.total+'|'+Math.round(val*100);
+      // A descrição já traz o nº da parcela (ex.: "SunoM12/12") → remove p/ agrupar.
+      var base=(t.description||'').replace(/\s*\d{1,2}\/\d{1,2}\s*$/,'').trim()||t.description;
+      var gk=t.accountId+'|'+dkNorm(base)+'|'+inst.total+'|'+Math.round(val*100);
       if(!groups[gk]){
-        groups[gk]={accountId:t.accountId,desc:t.description,val:val,total:inst.total,
-          cat:mapCatPluggy(t.category,t.description,'e'),repN:inst.n,repDate:t.date,plIds:[]};
+        groups[gk]={accountId:t.accountId,desc:base,val:val,total:inst.total,
+          cat:mapCatPluggy(t.category,base,'e'),repN:inst.n,repDate:t.date,plIds:[]};
         out.push({__group:gk});
       }
       var g=groups[gk];g.plIds.push(t.plId);
@@ -1882,9 +1884,20 @@ function mostrarPreviewSync(data){
   });
   var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
+  // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
+  var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.tipo==='e')mks[(c.data||'').substring(0,7)]=true;});
+  syncFixosSup=[];
+  Object.keys(mks).sort().forEach(function(mk){
+    var p=mk.split('-'),m=parseInt(p[1]),y=parseInt(p[0]);
+    fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
+      var ja=db.ocorrs.some(function(o){return o.gid===f.gid&&o.mk===mk&&o.deleted;});
+      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:ja});
+    });
+  });
   renderSyncPreview();
   document.getElementById('ov-sync').classList.add('on');
 }
+function toggleSyncFixo(i,c){if(syncFixosSup[i])syncFixosSup[i].checked=c;}
 function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
 function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
 function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
@@ -1907,6 +1920,17 @@ function renderSyncPreview(){
       h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado. Use 🧹 Limpar conexões e reconecte com "Pluggy Bank".</div>';
   }
   h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · '+syncSkipped+' já no app (ignoradas)</div>';
+  if(syncFixosSup.length){
+    h+='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:8px">'
+      +'<div style="font-size:11px;font-weight:600;color:#fbbf24;margin-bottom:8px">⚠️ Fixos do período — marque os que já vieram do banco para não duplicar</div>'
+      +syncFixosSup.map(function(f,i){var p=f.mk.split('-'),mes=MESES[+p[1]-1]+'/'+p[0];
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a;cursor:pointer">'
+          +'<input type="checkbox" '+(f.checked?'checked':'')+' onchange="toggleSyncFixo('+i+',this.checked)" style="width:16px;height:16px;flex:none">'
+          +'<span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
+          +'<span style="font-size:10px;color:#7b80a0;flex:none">'+mes+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:#f87171;flex:none">-'+fmt(f.val)+'</span></label>';
+      }).join('')+'</div>';
+  }
   var credAccs=(data.accounts||[]).filter(function(a){return a.type==='CREDIT';});
   if(credAccs.length){
     h+='<div style="margin:8px 0 4px;font-size:12px;font-weight:700">Mapear cartão</div>';
@@ -1967,10 +1991,11 @@ function confirmarMergeSync(){
   });
   if(!db.pluggySeen)db.pluggySeen={};
   var existParc={};db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;});
-  var addL=0,addC=0;
+  var addL=0,addC=0,novosBank=[];
   cands.forEach(function(c){
     if(c.target==='lancs'){
-      db.lancs.push({id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addL++;
+      var nl={id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val};
+      db.lancs.push(nl);if(c.tipo==='e')novosBank.push(nl);addL++;
       return;
     }
     var ccId=db.pluggyCards[c.accountId];
@@ -1990,10 +2015,25 @@ function confirmarMergeSync(){
     db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',
       sub:'av',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addC++;
   });
-  log('pluggy_merge',{lancs:addL,cc:addC});
+  // Suprime fixos marcados (já vieram do banco), vinculando ao débito real p/ o comprometimento.
+  var suprimidos=syncFixosSup.filter(function(f){return f.checked;}),usados={};
+  suprimidos.forEach(function(f){
+    var best=null,bestDiff=Infinity,bestCat=false;
+    novosBank.forEach(function(l){
+      if(usados[l.id])return;var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
+      if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
+    });
+    var subVal=0;if(best){usados[best.id]=true;best.subGid=f.gid;subVal=best.val;}
+    var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
+    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
+    if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
+  });
+  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length});
   syncFaturas();salvar();render();
   fechar('ov-sync');
-  toast('✓ Mesclado: '+addL+' em conta corrente + '+addC+' no cartão.');
+  var msg='✓ Mesclado: '+addL+' em conta corrente + '+addC+' no cartão.';
+  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo(s) suprimido(s).';
+  toast(msg);
 }
 // Copia os dados de PRODUÇÃO (tabela 'financas', somente-leitura) para o LAB
 // (tabela financas_lab). Nunca escreve em produção.

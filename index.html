@@ -250,6 +250,13 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <button class="gbtn" style="margin-top:0" onclick="copiarLog()">📋 Copiar log completo</button>
       <button class="cbtn" onclick="limparLog()">Limpar log</button>
     </div>
+    <div class="card">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">💾 Backup</div>
+      <div style="font-size:11px;color:#7b80a0;margin-bottom:10px">Baixe uma cópia de todos os seus dados (lançamentos, cartões, fixos, cofrinhos…) ou restaure de um arquivo salvo. Restaurar substitui os dados atuais desta conta.</div>
+      <button class="sbtn" style="margin-top:0" onclick="exportarBackup()">⬇️ Exportar backup (.json)</button>
+      <button class="sbtn" style="margin-top:8px;background:#22263a" onclick="document.getElementById('backup-file').click()">⬆️ Restaurar de arquivo</button>
+      <input type="file" id="backup-file" accept="application/json,.json" style="display:none" onchange="restaurarBackup(this)">
+    </div>
   </div>
 
   <div id="fab-menu" style="display:none">
@@ -501,7 +508,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v101';
+var APP_VERSION = 'v102';
 
 var currentUser = null;
 var accessToken = null;
@@ -631,6 +638,43 @@ function salvar(){
   if(!currentUser||!accessToken) return; // nunca salva antes de carregar
   clearTimeout(saveTimer);
   saveTimer = setTimeout(salvarNuvem, 800);
+}
+
+// ── BACKUP (exportar / restaurar) ──
+// Exporta todo o db em memória (dados de produção já carregados) como .json.
+function exportarBackup(){
+  try{
+    var blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download='financas-backup-'+((currentUser&&currentUser.email)||'user')+'-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    log('backup_export',{lancs:(db.lancs||[]).length,cartoes:(db.cartoes||[]).length,fixos:(db.fixos||[]).length});
+    toast('✓ Backup exportado.');
+  }catch(e){console.error(e);toast('Erro ao exportar backup.');}
+}
+// Restaura de um arquivo .json — SUBSTITUI os dados atuais (mescla sobre defaults,
+// igual a carregarDados) e grava na nuvem. Pede confirmação antes.
+function restaurarBackup(input){
+  var file=input&&input.files&&input.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(){
+    input.value=''; // permite re-selecionar o mesmo arquivo depois
+    var parsed;
+    try{parsed=JSON.parse(reader.result);}catch(e){toast('Arquivo inválido (não é JSON).');return;}
+    if(!parsed||typeof parsed!=='object'||!Array.isArray(parsed.lancs)){toast('Não parece um backup do FinançasFácil.');return;}
+    var resumo=(parsed.lancs||[]).length+' lançamentos, '+(parsed.cartoes||[]).length+' cartões, '+(parsed.fixos||[]).length+' fixos';
+    confirmar('Restaurar este backup? Isto SUBSTITUI todos os dados atuais desta conta ('+resumo+'). Não dá para desfazer.',function(){
+      db=Object.assign({},db,parsed);
+      log('backup_restore',{lancs:(db.lancs||[]).length});
+      salvarNuvem().then(function(){render();toast('✓ Backup restaurado.');});
+    });
+  };
+  reader.onerror=function(){toast('Erro ao ler o arquivo.');};
+  reader.readAsText(file);
 }
 
 // ── DADOS ────────────────────────────────────────────────

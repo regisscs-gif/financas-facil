@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 18';
+var APP_VERSION = 'v100-lab · build 19';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1890,8 +1890,7 @@ function mostrarPreviewSync(data){
   Object.keys(mks).sort().forEach(function(mk){
     var p=mk.split('-'),m=parseInt(p[1]),y=parseInt(p[0]);
     fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
-      var ja=db.ocorrs.some(function(o){return o.gid===f.gid&&o.mk===mk&&o.deleted;});
-      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:ja});
+      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:false});
     });
   });
   renderSyncPreview();

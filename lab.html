@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 20';
+var APP_VERSION = 'v100-lab · build 21';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1903,7 +1903,7 @@ function mostrarPreviewSync(data){
 }
 function toggleSyncFixo(i,c){if(syncFixosSup[i])syncFixosSup[i].checked=c;}
 function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
-function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
+function toggleSyncCand(i){if(!syncCands[i])return;syncCands[i].checked=!syncCands[i].checked;var b=document.getElementById('sync-merge-btn');if(b){var n=syncCands.filter(function(x){return x.checked;}).length;b.textContent='Mesclar '+n+' selecionado'+(n!==1?'s':'');b.disabled=!n;}}
 function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
 function titLabel(t){return t==='fam'?'👥 Família':'👤 Eu';}
 function toggleSyncTit(i){var c=syncCands[i];if(!c)return;c.titular=(c.titular==='fam')?'eu':'fam';var b=document.getElementById('tit-'+i);if(b){b.textContent=titLabel(c.titular);b.style.color=(c.titular==='fam')?'#fbbf24':'#a5b4fc';}}
@@ -1914,25 +1914,20 @@ function syncCatOpts(c){
 }
 function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
 function syncRowHTML(c,selSt){
-  var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(c.data||'');
+  var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+'/'+dp[1]):(c.data||'');
   var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
-  var pinfo=c.installmentGroup?(' <span class="tag tprc">'+c.installmentGroup.total+'x</span>'):'';
-  var nota=c.flag==='ja_existe'?('possível duplicata'+(c.dupOf?' de "'+escHtml(c.dupOf)+'"':'')):flagNota(c.flag);
-  var vlabel=(isR?'+':'-')+fmt(c.val)+(c.installmentGroup?('<span style="font-size:9px;color:#7b80a0">/mês</span>'):'');
-  var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="'+selSt+';cursor:pointer;color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+titLabel(c.titular)+'</button>'):'';
-  return '<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
-    +'<div style="display:flex;align-items:center;gap:8px">'
-      +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
-      +'<div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
-      +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+vlabel+'</div>'
-    +'</div>'
-    +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;flex-wrap:wrap">'
-      +'<span style="font-size:10px;color:#7b80a0">'+dl+(c.installmentGroup?(' · início · '+c.installmentGroup.total+' parcelas'):'')+'</span>'
-      +'<select onchange="setSyncCat('+c._i+',this.value)" style="'+selSt+'">'+syncCatOpts(c)+'</select>'
-      +titBtn
-      +(nota?'<span style="font-size:10px;color:#fbbf24">'+nota+'</span>':'')
-    +'</div>'
-  +'</div>';
+  var parcTag=c.installmentGroup?'<span style="font-size:9px;background:rgba(129,140,248,.2);color:#a78bfa;border-radius:3px;padding:1px 4px;flex-shrink:0">'+c.installmentGroup.total+'x</span>':'';
+  var dupNote=c.flag==='ja_existe'?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="'+(c.dupOf?'Já lançado como: '+escHtml(c.dupOf):'possível duplicata')+'">⚠️ dup?</span>':((c.flag&&c.flag!=='ja_existe')?'<span style="font-size:9px;color:#fbbf24;flex-shrink:0" title="'+escHtml(flagNota(c.flag))+'">⚠️</span>':'');
+  var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="font-size:9px;padding:2px 5px;border-radius:3px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:rgba(129,140,248,.2);color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+(c.titular==='fam'?'FAM':'EU')+'</button>'):'';
+  return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2f4a;'+(c.flag?'opacity:.6':'')+'">'
+    +'<input type="checkbox"'+(c.checked?' checked':'')+' onchange="toggleSyncCand('+c._i+')" style="flex-shrink:0;width:18px;height:18px">'
+    +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+dl+'</span>'
+    +parcTag+dupNote
+    +'<span style="flex:1;min-width:0;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Toque para expandir" onclick="var s=this.style;var e=s.whiteSpace===\'normal\';s.whiteSpace=e?\'nowrap\':\'normal\';s.overflow=e?\'hidden\':\'visible\'">'+escHtml(c.desc||'—')+'</span>'
+    +'<select onchange="setSyncCat('+c._i+',this.value)" style="flex-shrink:0;width:104px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:1px 4px">'+syncCatOpts(c)+'</select>'
+    +titBtn
+    +'<span style="font-size:12px;font-weight:700;color:'+cor+';flex-shrink:0;min-width:60px;text-align:right">'+(isR?'+':'-')+fmt(c.val)+'</span>'
+    +'</div>';
 }
 function renderSyncPreview(){
   var data=syncData,it=data.item,h='';
@@ -1988,7 +1983,7 @@ function renderSyncPreview(){
   }
   if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';
   var nCheck=syncCands.filter(function(c){return c.checked;}).length;
-  h+='<button class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
+  h+='<button id="sync-merge-btn" class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
   document.getElementById('sync-content').innerHTML=h;
 }
 function confirmarMergeSync(){
@@ -2009,7 +2004,11 @@ function confirmarMergeSync(){
   function resolveConta(c){
     if(!c.plAccId)return null;
     var ct=db.contas.find(function(x){return x.plAccId===c.plAccId;});
-    if(!ct){ct={id:db.nid++,nome:c.banco||'Banco',plAccId:c.plAccId};db.contas.push(ct);}
+    if(!ct){
+      var base=c.banco||'Banco',nome=base,n=2;
+      while(db.contas.some(function(x){return x.nome===nome;}))nome=base+' '+(n++); // evita nomes iguais
+      ct={id:db.nid++,nome:nome,plAccId:c.plAccId};db.contas.push(ct);
+    }
     return ct.id;
   }
   var existParc={};db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;});

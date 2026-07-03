@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 21';
+var APP_VERSION = 'v100-lab · build 22';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1965,13 +1965,18 @@ function renderSyncPreview(){
     });
   }
   syncCands.forEach(function(c,i){c._i=i;});
-  // Conta corrente → subseções por banco (Itaú, Nubank...)
+  // Conta corrente → uma subseção por CONTA (cada conta da Pluggy), rotulada pelo banco.
   var lancsCands=syncCands.filter(function(c){return c.target==='lancs';});
   if(lancsCands.length){
-    var byBanco={};lancsCands.forEach(function(c){var b=c.banco||'Banco';(byBanco[b]=byBanco[b]||[]).push(c);});
-    Object.keys(byBanco).sort().forEach(function(b){
-      var lst=byBanco[b].sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
-      h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">🏦 '+escHtml(b)+' → Lançamentos ('+lst.length+')</div>';
+    var byAcc={},order=[];
+    lancsCands.forEach(function(c){var k=c.plAccId||'?';if(!byAcc[k]){byAcc[k]=[];order.push(k);}byAcc[k].push(c);});
+    var nameCount={};
+    order.forEach(function(k){
+      var banco=(byAcc[k][0].banco)||'Banco';
+      nameCount[banco]=(nameCount[banco]||0)+1;
+      var label=banco+(nameCount[banco]>1?' '+nameCount[banco]:''); // desambigua contas do mesmo banco
+      var lst=byAcc[k].sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
+      h+='<div style="margin:12px 0 4px;font-size:13px;font-weight:700;color:#a5b4fc;border-bottom:1px solid #3a3f5c;padding-bottom:3px">🏦 '+escHtml(label)+' <span style="font-size:11px;color:#7b80a0;font-weight:400">· '+lst.length+' lançamento'+(lst.length!==1?'s':'')+'</span></div>';
       lst.forEach(function(c){h+=syncRowHTML(c,selSt);});
     });
   }

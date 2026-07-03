@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 16';
+var APP_VERSION = 'v100-lab · build 17';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -570,7 +570,7 @@ function renderLog() {
 function loginGoogle(){
   supa.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: 'https://regisscs-gif.github.io/financas-facil/lab.html' }
+    options: { redirectTo: window.location.origin + window.location.pathname }
   });
 }
 

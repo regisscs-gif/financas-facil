@@ -511,7 +511,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 24';
+var APP_VERSION = 'v100-lab · build 25';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -805,7 +805,6 @@ function renderCfg() {
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
   var sf=document.getElementById('sync-from');
   if(sf&&!sf.value){var _d=new Date();_d.setDate(_d.getDate()-90);sf.value=_d.toISOString().slice(0,10);}
-  renderLabConns();
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1777,7 +1776,7 @@ function renomearConexao(id){
   toast('✓ Renomeado para "'+nome+'".');
 }
 // ── Configuração de importação (o que importar + de→para de cartões) ──
-var impCfgBuf=[];
+var impCfgBuf=[],impCfgConn={};
 async function abrirConfigImport(){
   if(!currentUser){toast('Faça login primeiro.');return;}
   var items=db.pluggyItems||[];
@@ -1786,7 +1785,8 @@ async function abrirConfigImport(){
   document.getElementById('imp-cfg-content').innerHTML='<div style="color:#7b80a0;font-size:12px">Buscando contas...</div>';
   document.getElementById('ov-imp-cfg').classList.add('on');
   try{
-    var hdrs=await authHeaders();impCfgBuf=[];
+    var hdrs=await authHeaders();impCfgBuf=[];impCfgConn={};
+    items.forEach(function(id){impCfgConn[id]=(db.pluggyItemNames&&db.pluggyItemNames[id])||'';});
     for(var i=0;i<items.length;i++){
       var id=items[i];
       var res=await axios.post(SYNC_URL,{itemId:id,accountsOnly:true},{headers:hdrs});
@@ -1834,19 +1834,33 @@ function renderConfigImport(){
           +'</div>';
       }
     });
-    return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#a5b4fc;margin-bottom:2px">🔗 '+escHtml(banco)+'</div>'+inner+'</div>';
+    return '<div style="margin-bottom:14px">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+        +'<span style="font-size:12px;flex:none">🔗</span>'
+        +'<input value="'+escHtml(impCfgConn[id]!=null?impCfgConn[id]:banco)+'" onchange="cfgSetConn(\''+id+'\',this.value)" placeholder="Nome do banco" style="flex:1;min-width:0;'+selSt+';font-weight:700;color:#a5b4fc" title="Nome da conexão (banco)">'
+      +'</div>'
+      +inner+'</div>';
   }).join('');
   document.getElementById('imp-cfg-content').innerHTML=h||'<div style="color:#7b80a0;font-size:12px">Nenhuma conta encontrada.</div>';
 }
 function cfgFind(id){return impCfgBuf.find(function(a){return a.plAccId===id;});}
+function cfgSetConn(itemId,v){impCfgConn[itemId]=v;}
 function cfgSetIncluir(id,c){var a=cfgFind(id);if(a)a.incluir=c;}
 function cfgSetNome(id,v){var a=cfgFind(id);if(a)a.nome=v;}
 function cfgSetCard(id,v){var a=cfgFind(id);if(a)a.ccId=(v==='new'||v==='ignore')?v:(+v);}
 function salvarConfigImport(){
   if(!db.pluggyAccs)db.pluggyAccs={};
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  // Nomes das conexões (bancos) + propaga p/ contas já criadas.
+  Object.keys(impCfgConn).forEach(function(id){
+    var nm=(impCfgConn[id]||'').trim();if(!nm)return;
+    db.pluggyItemNames[id]=nm;
+    (db.contas||[]).forEach(function(ct){if(ct.itemId===id)ct.nome=nm;});
+  });
   impCfgBuf.forEach(function(a){
     if(a.erro)return;
-    db.pluggyAccs[a.plAccId]={itemId:a.itemId,banco:a.banco,tipo:a.tipo,name:a.name,number:a.number,nome:a.nome,incluir:a.incluir,ccId:a.ccId,configurado:true};
+    var banco=(db.pluggyItemNames[a.itemId])||a.banco;
+    db.pluggyAccs[a.plAccId]={itemId:a.itemId,banco:banco,tipo:a.tipo,name:a.name,number:a.number,nome:a.nome,incluir:a.incluir,ccId:a.ccId,configurado:true};
   });
   salvar();fechar('ov-imp-cfg');render();
   toast('✓ Configuração salva.');

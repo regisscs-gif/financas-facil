@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 15';
+var APP_VERSION = 'v100-lab · build 16';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -1738,7 +1738,7 @@ function adicionarItemManual(){
 function zerarLab(){
   if(!confirm('ZERAR o lab? Apaga todos os lançamentos, cartões, fixos e conexões do ambiente de teste (financas_lab).\n\nProdução NÃO é afetada. Continuar?'))return;
   db.lancs=[];db.fixos=[];db.ocorrs=[];db.cartoes=[];db.ccLancs=[];db.ccPagamentos=[];
-  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};
+  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};
   log('lab_zerado',{});salvar();render();
   toast('✓ Lab zerado. Agora conecte seu banco real.');
 }
@@ -1816,37 +1816,58 @@ function isCardPaymentPl(cat,desc){
   var s=((cat||'')+' '+(desc||'')).toLowerCase();
   return /credit card payment|pagamento.*fatura|fatura.*cart|pagto.*cart/.test(s);
 }
-function syncDupKey(data,desc,val){return data+'|'+dkNorm(desc)+'|'+(Math.round(Math.abs(val)*100)/100);}
-function buildSyncCandidates(data,existing,existKeys){
-  var out=[],skipped=0;
+// Dedup contra dados existentes por DATA + VALOR (nomes variam entre extrato e Pluggy).
+function syncDVKey(data,val){return data+'|'+Math.round(Math.abs(val)*100);}
+function shiftMonth(ds,k){var p=(ds||'').split('-');var d=new Date(+p[0],(+p[1]-1)+k,+p[2]);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function buildSyncCandidates(data,existing,existDV){
+  var out=[],skipped=0,groups={};
   (data.transactions||[]).forEach(function(t){
     if(t.plId&&existing[t.plId]){skipped++;return;} // já mesclado antes (mesmo plId)
     var val=Math.abs(t.amount);
-    var jaExiste=existKeys&&existKeys[syncDupKey(t.date,t.description,val)]; // igual a um lançamento existente
-    if(t.accountType==='CREDIT'){
-      // No cartão o sinal do amount é inconsistente (sandbox vs real), então NÃO
-      // é usado p/ direção: tudo é gasto, exceto pagamento/estorno por palavra-chave.
+    var isCred=(t.accountType==='CREDIT');
+    var inst=(t.installment&&t.installment.total>1)?t.installment:null;
+    // Parcelamento no cartão: agrupa por compra → 1 candidato só (replicado no merge).
+    if(isCred&&inst){
+      var gk=t.accountId+'|'+dkNorm(t.description)+'|'+inst.total+'|'+Math.round(val*100);
+      if(!groups[gk]){
+        groups[gk]={accountId:t.accountId,desc:t.description,val:val,total:inst.total,
+          cat:mapCatPluggy(t.category,t.description,'e'),repN:inst.n,repDate:t.date,plIds:[]};
+        out.push({__group:gk});
+      }
+      var g=groups[gk];g.plIds.push(t.plId);
+      if(inst.n<g.repN){g.repN=inst.n;g.repDate=t.date;}
+      return;
+    }
+    var dv=existDV&&existDV[syncDVKey(t.date,val)]; // mesmo dia + mesmo valor de um lançamento existente
+    if(isCred){
       var s=((t.category||'')+' '+(t.description||'')).toLowerCase();
       var isPay=isCardPaymentPl(t.category,t.description)||/estorno|refund|reversal|devolu|cashback|chargeback/.test(s);
-      var flag=jaExiste?'ja_existe':(isPay?'card_credit':null);
+      var flag=dv?'ja_existe':(isPay?'card_credit':null);
       out.push({target:'cc',accountId:t.accountId,desc:t.description,val:val,data:t.date,
         cat:mapCatPluggy(t.category,t.description,'e'),titular:'eu',
-        installment:(t.installment&&t.installment.total>1)?t.installment:null,
-        plId:t.plId,flag:flag,checked:!flag});
+        plId:t.plId,flag:flag,dupOf:dv||null,checked:!flag});
     }else{
       var tipo=(t.amount<0)?'e':'r';
-      var f=jaExiste?'ja_existe':(isCardPaymentPl(t.category,t.description)?'card_payment':null);
+      var f=dv?'ja_existe':(isCardPaymentPl(t.category,t.description)?'card_payment':null);
       out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
-        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,checked:!f});
+        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,dupOf:dv||null,checked:!f});
     }
+  });
+  // Materializa os candidatos de parcelamento (1 linha por compra).
+  out=out.map(function(o){
+    if(!o.__group)return o;
+    var g=groups[o.__group];var firstDate=shiftMonth(g.repDate,-(g.repN-1));
+    return {target:'cc',accountId:g.accountId,desc:g.desc,val:g.val,data:firstDate,cat:g.cat,titular:'eu',
+      installmentGroup:{total:g.total,firstDate:firstDate},plIds:g.plIds,plId:g.plIds[0],flag:null,checked:true};
   });
   return {candidates:out,skipped:skipped};
 }
 function mostrarPreviewSync(data){
   syncData=data;
-  var existing={},existKeys={};
-  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
-  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existKeys[syncDupKey(l.data,l.desc,l.val)]=true;});
+  var existing={},existDV={};
+  db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existDV[syncDVKey(l.data,l.val)]=l.desc;});
+  db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existDV[syncDVKey(l.data,l.val)]=l.desc;});
+  if(db.pluggySeen)Object.keys(db.pluggySeen).forEach(function(p){existing[p]=true;});
   // Mapeamento cartão Pluggy → cartão do app (auto-match por nome; senão criar novo).
   if(!db.pluggyCards)db.pluggyCards={};
   syncCardMap={};
@@ -1859,7 +1880,7 @@ function mostrarPreviewSync(data){
         ||db.cartoes.find(function(c){return na&&(dkNorm(c.nome).indexOf(na)>=0||na.indexOf(dkNorm(c.nome))>=0);});
     syncCardMap[a.id]=m?m.id:'new';
   });
-  var r=buildSyncCandidates(data,existing,existKeys);
+  var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
   renderSyncPreview();
   document.getElementById('ov-sync').classList.add('on');
@@ -1867,13 +1888,14 @@ function mostrarPreviewSync(data){
 function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
 function toggleSyncCand(i){if(syncCands[i]){syncCands[i].checked=!syncCands[i].checked;renderSyncPreview();}}
 function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
-function setSyncTit(i,v){if(syncCands[i])syncCands[i].titular=v;}
+function titLabel(t){return t==='fam'?'👥 Família':'👤 Eu';}
+function toggleSyncTit(i){var c=syncCands[i];if(!c)return;c.titular=(c.titular==='fam')?'eu':'fam';var b=document.getElementById('tit-'+i);if(b){b.textContent=titLabel(c.titular);b.style.color=(c.titular==='fam')?'#fbbf24':'#a5b4fc';}}
 function syncCatOpts(c){
   var isR=(c.tipo==='r');var cats=(isR?(db.catsR||[]):(db.catsE||[])).slice();
   if(c.cat&&cats.indexOf(c.cat)<0)cats.unshift(c.cat);
   return cats.map(function(x){return '<option'+(x===c.cat?' selected':'')+'>'+escHtml(x)+'</option>';}).join('');
 }
-function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':f==='ja_existe'?'provável duplicata (já existe no app)':'';}
+function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
 function renderSyncPreview(){
   var data=syncData,it=data.item,h='';
   var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
@@ -1907,18 +1929,20 @@ function renderSyncPreview(){
     list.forEach(function(c){
       var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(c.data||'');
       var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
-      var pinfo=(c.installment&&c.installment.total)?(' <span class="tag tprc">'+c.installment.n+'/'+c.installment.total+'</span>'):'';
-      var nota=flagNota(c.flag);
+      var pinfo=c.installmentGroup?(' <span class="tag tprc">'+c.installmentGroup.total+'x</span>'):'';
+      var nota=c.flag==='ja_existe'?('possível duplicata'+(c.dupOf?' de "'+escHtml(c.dupOf)+'"':'')):flagNota(c.flag);
+      var vlabel=(isR?'+':'-')+fmt(c.val)+(c.installmentGroup?('<span style="font-size:9px;color:#7b80a0">/mês</span>'):'');
+      var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="'+selSt+';cursor:pointer;color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+titLabel(c.titular)+'</button>'):'';
       h+='<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
         +'<div style="display:flex;align-items:center;gap:8px">'
           +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
           +'<div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
-          +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+(isR?'+':'-')+fmt(c.val)+'</div>'
+          +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+vlabel+'</div>'
         +'</div>'
         +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;flex-wrap:wrap">'
-          +'<span style="font-size:10px;color:#7b80a0">'+dl+'</span>'
+          +'<span style="font-size:10px;color:#7b80a0">'+dl+(c.installmentGroup?(' · início · '+c.installmentGroup.total+' parcelas'):'')+'</span>'
           +'<select onchange="setSyncCat('+c._i+',this.value)" style="'+selSt+'">'+syncCatOpts(c)+'</select>'
-          +(c.target==='cc'?('<select onchange="setSyncTit('+c._i+',this.value)" style="'+selSt+'"><option value="eu"'+(c.titular!=='fam'?' selected':'')+'>👤 Eu</option><option value="fam"'+(c.titular==='fam'?' selected':'')+'>👥 Família</option></select>'):'')
+          +titBtn
           +(nota?'<span style="font-size:10px;color:#fbbf24">'+nota+'</span>':'')
         +'</div>'
       +'</div>';
@@ -1941,17 +1965,30 @@ function confirmarMergeSync(){
     else{var nc={id:db.nid++,nome:a.name||'Cartão Pluggy',limite:0,fecha:1,vence:10};db.cartoes.push(nc);ccId=nc.id;}
     db.pluggyCards[a.id]=ccId;
   });
+  if(!db.pluggySeen)db.pluggySeen={};
+  var existParc={};db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;});
   var addL=0,addC=0;
   cands.forEach(function(c){
     if(c.target==='lancs'){
       db.lancs.push({id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addL++;
-    }else{
-      var ccId=db.pluggyCards[c.accountId];
-      var o={id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val};
-      if(c.installment&&c.installment.total>1){o.sub='pa';o.pn=c.installment.n;o.pt=c.installment.total;o.pid='pl'+ccId+'§'+c.desc+'§'+c.installment.total;}
-      else o.sub='av';
-      db.ccLancs.push(o);addC++;
+      return;
     }
+    var ccId=db.pluggyCards[c.accountId];
+    if(c.installmentGroup){
+      // Replica a compra parcelada em N meses (1 débito → N parcelas), como no import de fatura.
+      var g=c.installmentGroup,pid='pl'+ccId+'§'+dkNorm(c.desc)+'§'+g.total;
+      for(var i=1;i<=g.total;i++){
+        var d=shiftMonth(g.firstDate,i-1),key=ccParcKeyParts(ccId,c.desc,c.val,i,g.total);
+        if(existParc[key])continue; // já existe (manual ou sync anterior)
+        db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:d,cat:c.cat,titular:c.titular||'eu',
+          sub:'pa',pn:i,pt:g.total,pid:pid,plId:(i===1?c.plId:undefined),csvKey:d+'|'+c.desc+'|'+c.val});
+        existParc[key]=true;addC++;
+      }
+      (c.plIds||[]).forEach(function(p){if(p)db.pluggySeen[p]=true;});
+      return;
+    }
+    db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',
+      sub:'av',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addC++;
   });
   log('pluggy_merge',{lancs:addL,cc:addC});
   syncFaturas();salvar();render();

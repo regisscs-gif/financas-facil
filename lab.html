@@ -499,7 +499,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 19';
+var APP_VERSION = 'v100-lab · build 20';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -637,7 +637,7 @@ function salvar(){
 // ── DADOS ────────────────────────────────────────────────
 var db = {
   lancs:[], fixos:[], ocorrs:[],
-  cartoes:[], ccLancs:[], ccPagamentos:[],
+  cartoes:[], ccLancs:[], ccPagamentos:[], contas:[],
   catsR:['Salário','Freelance','Investimentos','Outros'],
   catsE:['Moradia','Alimentação','Transporte','Saúde','Lazer','Educação','Vestuário','Outros'],
   cfg:{ modelo:'cal', diaInicio:1 }, // ciclo financeiro
@@ -1738,7 +1738,7 @@ function adicionarItemManual(){
 function zerarLab(){
   if(!confirm('ZERAR o lab? Apaga todos os lançamentos, cartões, fixos e conexões do ambiente de teste (financas_lab).\n\nProdução NÃO é afetada. Continuar?'))return;
   db.lancs=[];db.fixos=[];db.ocorrs=[];db.cartoes=[];db.ccLancs=[];db.ccPagamentos=[];
-  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};
+  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};db.contas=[];
   log('lab_zerado',{});salvar();render();
   toast('✓ Lab zerado. Agora conecte seu banco real.');
 }
@@ -1779,6 +1779,8 @@ async function sincronizarBanco(){
       });
       if(d.error){toast('Erro: '+(d.detail||d.error));return;}
       if(d.item)all.item=d.item;
+      var banco=(d.item&&d.item.connector)||'Banco';
+      (d.accounts||[]).forEach(function(a){a.banco=banco;a.plItemId=items[i];});
       all.accounts=all.accounts.concat(d.accounts||[]);
       all.transactions=all.transactions.concat(d.transactions||[]);
     }
@@ -1821,6 +1823,7 @@ function syncDVKey(data,val){return data+'|'+Math.round(Math.abs(val)*100);}
 function shiftMonth(ds,k){var p=(ds||'').split('-');var d=new Date(+p[0],(+p[1]-1)+k,+p[2]);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
 function buildSyncCandidates(data,existing,existDV){
   var out=[],skipped=0,groups={};
+  var accById={};(data.accounts||[]).forEach(function(a){accById[a.id]=a;});
   (data.transactions||[]).forEach(function(t){
     if(t.plId&&existing[t.plId]){skipped++;return;} // já mesclado antes (mesmo plId)
     var val=Math.abs(t.amount);
@@ -1851,8 +1854,10 @@ function buildSyncCandidates(data,existing,existDV){
     }else{
       var tipo=(t.amount<0)?'e':'r';
       var f=dv?'ja_existe':(isCardPaymentPl(t.category,t.description)?'card_payment':null);
+      var acc=accById[t.accountId]||{};
       out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
-        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,dupOf:dv||null,checked:!f});
+        cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,dupOf:dv||null,checked:!f,
+        plAccId:t.accountId,banco:acc.banco||'Banco'});
     }
   });
   // Materializa os candidatos de parcelamento (1 linha por compra).
@@ -1908,6 +1913,27 @@ function syncCatOpts(c){
   return cats.map(function(x){return '<option'+(x===c.cat?' selected':'')+'>'+escHtml(x)+'</option>';}).join('');
 }
 function flagNota(f){return f==='card_payment'?'pagamento de fatura (já entra pelo cartão)':f==='card_credit'?'estorno/crédito no cartão':'';}
+function syncRowHTML(c,selSt){
+  var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(c.data||'');
+  var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
+  var pinfo=c.installmentGroup?(' <span class="tag tprc">'+c.installmentGroup.total+'x</span>'):'';
+  var nota=c.flag==='ja_existe'?('possível duplicata'+(c.dupOf?' de "'+escHtml(c.dupOf)+'"':'')):flagNota(c.flag);
+  var vlabel=(isR?'+':'-')+fmt(c.val)+(c.installmentGroup?('<span style="font-size:9px;color:#7b80a0">/mês</span>'):'');
+  var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="'+selSt+';cursor:pointer;color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+titLabel(c.titular)+'</button>'):'';
+  return '<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
+    +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
+      +'<div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
+      +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+vlabel+'</div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;flex-wrap:wrap">'
+      +'<span style="font-size:10px;color:#7b80a0">'+dl+(c.installmentGroup?(' · início · '+c.installmentGroup.total+' parcelas'):'')+'</span>'
+      +'<select onchange="setSyncCat('+c._i+',this.value)" style="'+selSt+'">'+syncCatOpts(c)+'</select>'
+      +titBtn
+      +(nota?'<span style="font-size:10px;color:#fbbf24">'+nota+'</span>':'')
+    +'</div>'
+  +'</div>';
+}
 function renderSyncPreview(){
   var data=syncData,it=data.item,h='';
   var selSt='font-size:11px;background:#1a1d2e;color:#e8eaf6;border:1px solid #3a3f5c;border-radius:6px;padding:2px 4px';
@@ -1943,34 +1969,23 @@ function renderSyncPreview(){
         +'</select></div>';
     });
   }
-  var groups=[{t:'lancs',label:'🏦 Conta corrente → Lançamentos'},{t:'cc',label:'💳 Cartão → Fatura'}];
-  groups.forEach(function(g){
-    var list=[];syncCands.forEach(function(c,i){if(c.target===g.t){c._i=i;list.push(c);}});
-    if(!list.length)return;
-    list.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
-    h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">'+g.label+' ('+list.length+')</div>';
-    list.forEach(function(c){
-      var dp=(c.data||'').split('-');var dl=dp.length===3?(dp[2]+' '+MABR[+dp[1]-1]):(c.data||'');
-      var isR=(c.tipo==='r');var cor=isR?'#34d399':'#f87171';
-      var pinfo=c.installmentGroup?(' <span class="tag tprc">'+c.installmentGroup.total+'x</span>'):'';
-      var nota=c.flag==='ja_existe'?('possível duplicata'+(c.dupOf?' de "'+escHtml(c.dupOf)+'"':'')):flagNota(c.flag);
-      var vlabel=(isR?'+':'-')+fmt(c.val)+(c.installmentGroup?('<span style="font-size:9px;color:#7b80a0">/mês</span>'):'');
-      var titBtn=(c.target==='cc')?('<button id="tit-'+c._i+'" onclick="toggleSyncTit('+c._i+')" style="'+selSt+';cursor:pointer;color:'+(c.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+titLabel(c.titular)+'</button>'):'';
-      h+='<div style="padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:4px">'
-        +'<div style="display:flex;align-items:center;gap:8px">'
-          +'<input type="checkbox" '+(c.checked?'checked':'')+' onchange="toggleSyncCand('+c._i+')" style="width:16px;height:16px;flex:none">'
-          +'<div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.desc||'—')+pinfo+'</div>'
-          +'<div style="font-size:13px;font-weight:700;color:'+cor+';flex:none">'+vlabel+'</div>'
-        +'</div>'
-        +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;padding-left:24px;flex-wrap:wrap">'
-          +'<span style="font-size:10px;color:#7b80a0">'+dl+(c.installmentGroup?(' · início · '+c.installmentGroup.total+' parcelas'):'')+'</span>'
-          +'<select onchange="setSyncCat('+c._i+',this.value)" style="'+selSt+'">'+syncCatOpts(c)+'</select>'
-          +titBtn
-          +(nota?'<span style="font-size:10px;color:#fbbf24">'+nota+'</span>':'')
-        +'</div>'
-      +'</div>';
+  syncCands.forEach(function(c,i){c._i=i;});
+  // Conta corrente → subseções por banco (Itaú, Nubank...)
+  var lancsCands=syncCands.filter(function(c){return c.target==='lancs';});
+  if(lancsCands.length){
+    var byBanco={};lancsCands.forEach(function(c){var b=c.banco||'Banco';(byBanco[b]=byBanco[b]||[]).push(c);});
+    Object.keys(byBanco).sort().forEach(function(b){
+      var lst=byBanco[b].sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
+      h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">🏦 '+escHtml(b)+' → Lançamentos ('+lst.length+')</div>';
+      lst.forEach(function(c){h+=syncRowHTML(c,selSt);});
     });
-  });
+  }
+  // Cartão
+  var ccCands=syncCands.filter(function(c){return c.target==='cc';}).sort(function(a,z){return (z.data||'').localeCompare(a.data||'');});
+  if(ccCands.length){
+    h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700">💳 Cartão → Fatura ('+ccCands.length+')</div>';
+    ccCands.forEach(function(c){h+=syncRowHTML(c,selSt);});
+  }
   if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';
   var nCheck=syncCands.filter(function(c){return c.checked;}).length;
   h+='<button class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
@@ -1989,11 +2004,19 @@ function confirmarMergeSync(){
     db.pluggyCards[a.id]=ccId;
   });
   if(!db.pluggySeen)db.pluggySeen={};
+  if(!db.contas)db.contas=[];
+  // Resolve conta bancária por plAccId (cria com o nome do banco se faltar).
+  function resolveConta(c){
+    if(!c.plAccId)return null;
+    var ct=db.contas.find(function(x){return x.plAccId===c.plAccId;});
+    if(!ct){ct={id:db.nid++,nome:c.banco||'Banco',plAccId:c.plAccId};db.contas.push(ct);}
+    return ct.id;
+  }
   var existParc={};db.ccLancs.forEach(function(l){var k=ccParcKey(l);if(k)existParc[k]=true;});
   var addL=0,addC=0,novosBank=[];
   cands.forEach(function(c){
     if(c.target==='lancs'){
-      var nl={id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val};
+      var nl={id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,contaId:resolveConta(c),csvKey:c.data+'|'+c.desc+'|'+c.val};
       db.lancs.push(nl);if(c.tipo==='e')novosBank.push(nl);addL++;
       return;
     }
@@ -2630,8 +2653,9 @@ function itemLancHTML(l){
       +(exp?drillFaturaHTML(l):'');
   }
   var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>'+(l.pago?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px" title="Parcela paga (pagamento real reconciliado)">✓ pago</span>':''):l.sub==='imp'?'<span class="tag" style="background:rgba(52,211,153,.15);color:#34d399;font-size:9px">EXT</span>':'';
+  var contaTag=l.contaId?(' · 🏦 '+escHtml(contaNome(l.contaId))):'';
   return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)')+'">'+emo(l.cat)+'</div>'
-    +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+'</div></div>'
+    +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+escHtml(l.cat)+' · '+p[2]+'/'+p[1]+contaTag+'</div></div>'
     +'<div class="ival" style="color:'+(isR?'#34d399':'#f87171')+'">'+(isR?'+':'-')+fmt(l.val)+'</div>'
     +'<button class="ebtn" onclick="abrirEditarLanc('+l.id+')">✏️</button></div>';
 }
@@ -2706,19 +2730,44 @@ function renderDash(){
   document.getElementById('d-cc-card').innerHTML=ccH;
 }
 
+var lancFiltroConta=null; // null=todas | contaId(number) | 'sem'
+function contaNome(id){var c=(db.contas||[]).find(function(x){return x.id===id;});return c?c.nome:'Conta';}
+function setLancFiltro(v){lancFiltroConta=v;renderLancs();}
+function lancChip(v,label){
+  var active=(v===lancFiltroConta);
+  var arg=(v===null)?'null':(v==='sem')?"'sem'":v;
+  return '<button onclick="setLancFiltro('+arg+')" style="font-size:11px;padding:4px 10px;border-radius:14px;border:1px solid '+(active?'#818cf8':'#3a3f5c')+';background:'+(active?'rgba(129,140,248,.2)':'#22263a')+';color:'+(active?'#a5b4fc':'#9aa0c0')+';cursor:pointer;font-weight:600">'+label+'</button>';
+}
 function renderLancs(){
   var mk=mesKey(curM,curY);var fixMes=fixosVigentes(curM,curY);
-  var list=lancsDoMes(curM,curY).sort(function(a,b){return b.data.localeCompare(a.data);});
-  var h='';
-  if(fixMes.length)h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';
+  var full=lancsDoMes(curM,curY).sort(function(a,b){return b.data.localeCompare(a.data);});
+  // Chips de filtro por conta (contas presentes no mês + "Sem conta" se houver)
+  var comConta={},temSem=false;
+  full.forEach(function(l){if(l.contaId)comConta[l.contaId]=true;else temSem=true;});
+  var contasMes=(db.contas||[]).filter(function(c){return comConta[c.id];});
+  var chips='';
+  if(contasMes.length){
+    chips='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+      +lancChip(null,'Todas')
+      +contasMes.map(function(c){return lancChip(c.id,'🏦 '+escHtml(c.nome));}).join('')
+      +(temSem?lancChip('sem','Sem conta'):'')
+      +'</div>';
+  }
+  // Aplica filtro
+  var list=full;
+  if(lancFiltroConta==='sem')list=full.filter(function(l){return !l.contaId;});
+  else if(lancFiltroConta!=null)list=full.filter(function(l){return l.contaId===lancFiltroConta;});
+  var h=chips;
+  // Fixos do mês só quando sem filtro de conta (fixos são planejados, não pertencem a uma conta)
+  if(lancFiltroConta==null&&fixMes.length)h+='<div class="card"><div class="sec">🔁 Fixos do mês</div>'+fixMes.map(function(f){return itemFixoMesHTML(f,mk);}).join('')+'</div>';
   if(list.length){
     var recs=list.filter(function(l){return l.tipo==='r';});var exps=list.filter(function(l){return l.tipo==='e';});
     h+='<div class="card">';
     if(recs.length)h+='<div class="sec">↑ Receitas</div>'+recs.map(itemLancHTML).join('');
     if(exps.length)h+='<div class="sec">↓ Despesas</div>'+exps.map(itemLancHTML).join('');
     h+='</div>';
-  }
-  document.getElementById('l-list').innerHTML=h||'<div class="empty">Sem lançamentos neste mês.</div>';
+  }else h+='<div class="empty">Sem lançamentos'+(lancFiltroConta!=null?' nesta conta':' neste mês')+'.</div>';
+  document.getElementById('l-list').innerHTML=h;
 }
 function renderFixos(){
   var el=document.getElementById('fix-list');

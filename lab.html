@@ -199,6 +199,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">🧪 Ambiente LAB</div>
       <div style="font-size:12px;color:#7b80a0;margin-bottom:12px">Este é o ambiente de testes (tabela <code>financas_lab</code>). Copie seus dados de produção para testar com dados reais — a leitura em produção é somente-leitura e <b>nada</b> em produção é alterado.</div>
       <button class="sbtn" style="margin-top:0" onclick="conectarBanco()">🔗 Conectar banco (Pluggy)</button>
+      <div id="lab-conns"></div>
       <label style="margin-top:10px">Trazer transações a partir de</label>
       <input id="sync-from" type="date" style="margin-bottom:4px">
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
@@ -499,7 +500,7 @@ var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var LAB=true;
 var TABLE='financas_lab';
 
-var APP_VERSION = 'v100-lab · build 22';
+var APP_VERSION = 'v100-lab · build 23';
 // Mostra a versão/build no banner LAB (sempre visível, inclusive na tela de login),
 // para confirmar que a página carregou a versão mais recente.
 try{var _lb=document.getElementById('lab-badge');if(_lb)_lb.textContent='🧪 LAB · '+APP_VERSION+' · dados de teste (financas_lab)';}catch(e){}
@@ -793,6 +794,7 @@ function renderCfg() {
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
   var sf=document.getElementById('sync-from');
   if(sf&&!sf.value){var _d=new Date();_d.setDate(_d.getDate()-90);sf.value=_d.toISOString().slice(0,10);}
+  renderLabConns();
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1719,9 +1721,12 @@ function onBancoConectado(itemData){
   if(!itemId){toast('Conexão concluída, mas sem itemId retornado.');return;}
   if(!db.pluggyItems)db.pluggyItems=[];
   if(db.pluggyItems.indexOf(itemId)<0)db.pluggyItems.push(itemId);
-  log('pluggy_item',{itemId:itemId,connector:item.connector&&item.connector.name});
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  var def=(item.connector&&item.connector.name)||'Banco';
+  db.pluggyItemNames[itemId]=(prompt('Nome deste banco/conexão:',def)||def).trim()||def;
+  log('pluggy_item',{itemId:itemId,connector:item.connector&&item.connector.name,nome:db.pluggyItemNames[itemId]});
   salvar();
-  toast('✓ Banco conectado! (item '+String(itemId).slice(0,8)+'…) Sincronização de transações vem no próximo passo.');
+  toast('✓ Banco "'+db.pluggyItemNames[itemId]+'" conectado! Clique em 🔄 Sincronizar.');
 }
 var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
 // Adiciona manualmente um itemId (ex.: um item sandbox criado via API para teste).
@@ -1731,14 +1736,40 @@ function adicionarItemManual(){
   if(!/^[0-9a-f-]{30,}$/i.test(id)){toast('itemId inválido.');return;}
   if(!db.pluggyItems)db.pluggyItems=[];
   if(db.pluggyItems.indexOf(id)<0)db.pluggyItems.push(id);
-  log('pluggy_item_manual',{item:id.slice(0,8)});salvar();
-  toast('✓ itemId adicionado. Clique em 🔄 Sincronizar.');
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  db.pluggyItemNames[id]=(prompt('Nome deste banco/conexão:','Banco')||'Banco').trim()||'Banco';
+  log('pluggy_item_manual',{item:id.slice(0,8),nome:db.pluggyItemNames[id]});salvar();
+  toast('✓ "'+db.pluggyItemNames[id]+'" adicionado. Clique em 🔄 Sincronizar.');
+}
+// Lista as conexões (bancos) com opção de renomear — cada conexão Pluggy = 1 banco.
+function renderLabConns(){
+  var el=document.getElementById('lab-conns');if(!el)return;
+  var items=db.pluggyItems||[];
+  if(!items.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="font-size:11px;color:#7b80a0;margin:8px 0 2px">Conexões (1 por banco):</div>'
+    +items.map(function(id){
+      var nome=(db.pluggyItemNames&&db.pluggyItemNames[id])||'(sem nome)';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">'
+        +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏦 '+escHtml(nome)+' <span style="color:#7b80a0;font-size:10px">'+String(id).slice(0,8)+'…</span></span>'
+        +'<button onclick="renomearConexao(\''+id+'\')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #3a3f5c;background:#22263a;color:#a5b4fc;cursor:pointer">Renomear</button>'
+        +'</div>';
+    }).join('');
+}
+function renomearConexao(id){
+  if(!db.pluggyItemNames)db.pluggyItemNames={};
+  var nome=(prompt('Nome do banco/conexão:',db.pluggyItemNames[id]||'')||'').trim();
+  if(!nome)return;
+  db.pluggyItemNames[id]=nome;
+  // Atualiza também as contas já criadas a partir desta conexão.
+  (db.contas||[]).forEach(function(ct){if(ct.itemId===id)ct.nome=nome;});
+  salvar();renderLabConns();render();
+  toast('✓ Renomeado para "'+nome+'".');
 }
 // Zera TODOS os dados financeiros do lab (tabela financas_lab). Não toca em produção.
 function zerarLab(){
   if(!confirm('ZERAR o lab? Apaga todos os lançamentos, cartões, fixos e conexões do ambiente de teste (financas_lab).\n\nProdução NÃO é afetada. Continuar?'))return;
   db.lancs=[];db.fixos=[];db.ocorrs=[];db.cartoes=[];db.ccLancs=[];db.ccPagamentos=[];
-  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};db.contas=[];
+  db.cofrinhos=[];db.cofrinhoMovs=[];db.pluggyItems=[];db.pluggyCards={};db.pluggySeen={};db.contas=[];db.pluggyItemNames={};
   log('lab_zerado',{});salvar();render();
   toast('✓ Lab zerado. Agora conecte seu banco real.');
 }
@@ -1747,7 +1778,7 @@ function limparConexoesLab(){
   var n=(db.pluggyItems||[]).length;
   if(!n){toast('Nenhuma conexão salva.');return;}
   if(!confirm('Remover '+n+' conexão(ões) Pluggy salva(s) no lab? (Isso não desconecta nada na Pluggy, só limpa a lista local.)'))return;
-  db.pluggyItems=[];log('pluggy_clear',{removidos:n});salvar();
+  db.pluggyItems=[];db.pluggyItemNames={};log('pluggy_clear',{removidos:n});salvar();renderLabConns();
   toast('✓ '+n+' conexão(ões) removida(s). Reconecte um banco.');
 }
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
@@ -1779,7 +1810,7 @@ async function sincronizarBanco(){
       });
       if(d.error){toast('Erro: '+(d.detail||d.error));return;}
       if(d.item)all.item=d.item;
-      var banco=(d.item&&d.item.connector)||'Banco';
+      var banco=(db.pluggyItemNames&&db.pluggyItemNames[items[i]])||(d.item&&d.item.connector)||'Banco';
       (d.accounts||[]).forEach(function(a){a.banco=banco;a.plItemId=items[i];});
       all.accounts=all.accounts.concat(d.accounts||[]);
       all.transactions=all.transactions.concat(d.transactions||[]);
@@ -1857,7 +1888,7 @@ function buildSyncCandidates(data,existing,existDV){
       var acc=accById[t.accountId]||{};
       out.push({target:'lancs',tipo:tipo,desc:t.description,val:val,data:t.date,
         cat:mapCatPluggy(t.category,t.description,tipo),plId:t.plId,flag:f,dupOf:dv||null,checked:!f,
-        plAccId:t.accountId,banco:acc.banco||'Banco'});
+        plAccId:t.accountId,banco:acc.banco||'Banco',plItemId:acc.plItemId});
     }
   });
   // Materializa os candidatos de parcelamento (1 linha por compra).
@@ -2012,7 +2043,7 @@ function confirmarMergeSync(){
     if(!ct){
       var base=c.banco||'Banco',nome=base,n=2;
       while(db.contas.some(function(x){return x.nome===nome;}))nome=base+' '+(n++); // evita nomes iguais
-      ct={id:db.nid++,nome:nome,plAccId:c.plAccId};db.contas.push(ct);
+      ct={id:db.nid++,nome:nome,plAccId:c.plAccId,itemId:c.plItemId};db.contas.push(ct);
     }
     return ct.id;
   }

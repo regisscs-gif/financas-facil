@@ -4,25 +4,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**FinançasFácil** — responsive personal finance PWA (mobile-first, also works on desktop). Single `index.html` file, no build step, no framework, no package manager. UI language is Portuguese (pt-BR).
+**FinançasFácil** — responsive personal finance PWA (mobile-first, also works on desktop). No build step, no framework, no package manager. UI language is Portuguese (pt-BR).
 
-Deployed at: `https://regisscs-gif.github.io/financas-facil`
+Deployed at: `https://regisscs-gif.github.io/financas-facil` (GitHub Pages, repo is **public**).
 
-Two users with separate Supabase accounts: **Régis** (Itaú) and **Carla** (Santander). Features must work for both banks.
+Two users with separate Supabase accounts: **Régis** (Itaú + Nubank) and **Carla** (Santander). Features must work for both banks.
+
+### Repository layout
+- **`index.html`** — the **production** app (single-file). Currently **FROZEN** (see Pluggy section).
+- **`lab.html`** — parallel copy of `index.html` where the **Pluggy / Open Finance** integration is being built and validated in isolation. Persists to table `financas_lab`, never touches production data. **This is where active development happens right now.**
+- **`sw.js`** — service worker (production only; `lab.html` registers none).
+- **`supabase/functions/{connect-token,sync-transactions}/`** — Deno Edge Functions that hold the Pluggy secrets.
+- **`pluggy/*.js`** — local Node scripts to test Pluggy without the browser (read `pluggy/.env`, gitignored).
+- **`manifest.json`, `icon-*`** — PWA assets. **`DOCUMENTACAO.md`** — long-form pt-BR product doc.
 
 ## Running / Testing
 
-No dev server. Open `index.html` in a browser or use the deployed URL. Validate JS syntax before committing:
+No dev server for production. Validate JS syntax before **every** commit (works for `index.html` or `lab.html`):
 
 ```bash
-node -e "var fs=require('fs'),m=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*)<\/script>/);try{new Function(m[1]);console.log('✓ ok');}catch(e){console.error(e.message);}"
+node -e "var fs=require('fs'),src=fs.readFileSync('lab.html','utf8'),b=src.split('<script>')[1].split('</script>')[0];try{new Function(b);console.log('✓ ok');}catch(e){console.error(e.message);process.exit(1);}"
 ```
+
+**Local dev for `lab.html` (fast loop, avoids GitHub Pages latency):** Pages serves with `Cache-Control: max-age=600` (10-min CDN cache) plus a build queue, so the live URL can take ~10 min to update. Instead serve locally:
+
+```bash
+python3 -m http.server 8000    # run in the repo root; open http://localhost:8000/lab.html (NOT file://)
+```
+
+`lab.html`'s `redirectTo` is dynamic (`window.location.origin + pathname`), so Google login works on localhost **once `http://localhost:8000/lab.html` is added to Supabase → Authentication → Redirect URLs**. Every edit → just reload. `.nojekyll` keeps Pages builds fast; append `?v=N` to the live URL to bust the CDN cache.
+
+**Deploy an Edge Function** (Supabase CLI; no Docker required):
+
+```bash
+supabase functions deploy sync-transactions --project-ref wnllrhszlantunpwozhv
+supabase secrets set --env-file supabase/.env   # PLUGGY_CLIENT_ID / PLUGGY_CLIENT_SECRET
+```
+
+**Local Pluggy tests** (no browser; read creds from `pluggy/.env`): `node pluggy/test-connection.js` (creds ok), `node pluggy/sandbox-test.js` (create a sandbox item + inspect real account/transaction shapes), `node pluggy/merge-test.js` (candidate/dedup logic).
 
 ## Versioning & Deploy
 
-- Bump `APP_VERSION` in `index.html` **and** `CACHE` in `sw.js` on every commit (both must match, e.g. `'v80'` / `'ff-v80'`).
-- Commit format: `feat(vN): description` or `fix(vN): description`.
-- Push to `main` → GitHub Pages serves live in ~1 minute.
+- **Production (`index.html`):** bump `APP_VERSION` in `index.html` **and** `CACHE` in `sw.js` together on every production commit (must match, e.g. `'v100'` / `'ff-v100'`). Commit format `feat(vN):` / `fix(vN):`. Push to `main` → live in ~1 min.
+- **Lab (`lab.html`):** version is `'v100-lab · build N'` (in `APP_VERSION`, shown in the LAB banner). Bump **build N** on every lab change — it's the only way to confirm a reload picked up new code. Commit format `feat(lab):` / `fix(lab):`. `lab.html` does NOT touch `sw.js` or `index.html`.
+- **Production is currently FROZEN.** Do not edit `index.html` / `sw.js` while the Pluggy work is in the lab. Promotion to production is a separate, deliberate step.
+- Docs-only commits (this file) do not bump any version.
 
 ## Architecture
 
@@ -147,6 +173,30 @@ axios + Supabase load at the top with `integrity` (SRI). **Do not use jsDelivr `
 
 `log(action, data)` writes to `localStorage` (`ff_log`, max 300 entries). When diagnosing bugs, ask the user to copy from Config → Log de atividade → "Copiar log completo".
 
+## Pluggy / Open Finance (in `lab.html` only)
+
+Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura import for connected accounts. **Built and tested in `lab.html` — never in `index.html` — until deliberately promoted.**
+
+**Secrets never reach the browser** (repo is public). Flow: `browser → Supabase Edge Function (holds Pluggy secrets) → Pluggy API`.
+- `connect-token` — `auth → connect_token`; opens the Pluggy Connect widget (SDK pinned `cdn.pluggy.ai/pluggy-connect/v2.11.0`).
+- `sync-transactions` — body `{itemId, from?, accountsOnly?, accountIds?}` → returns `{item, accounts, transactions}`. `accountsOnly` skips transactions (for the config screen); `accountIds` limits which accounts' transactions are fetched. Both functions require a valid Supabase user JWT.
+
+**Pluggy gotchas (verified via `pluggy/*.js`):**
+- `/transactions` is **deprecated (410)** → use `GET /v2/transactions`. Response `{results, next}` where `next` is already the next-page querystring (`?accountId=…&after=…`) — append it directly; do NOT wrap as `&cursor=`. v2 rejects `pageSize`/`from`/`to` (filter dates client-side; stop paginating once older than `from`).
+- **Direction = sign of `amount`** for BANK accounts (negative=expense, positive=income). On CREDIT the sign is **inconsistent** (sandbox negative, real positive) — treat every card tx as an expense EXCEPT payments/refunds detected by keyword. The `type` (DEBIT/CREDIT) field is unreliable.
+- One Pluggy **item = one bank**; an item can return multiple **accounts** (Itaú returns corrente + poupança). Bank name = `item.connector.name`.
+- Sandbox: use connector **"Pluggy Bank"** (id 2, creds `user-ok`/`password-ok`) for reliable data; "MeuPluggy" items sometimes 404 `ITEM_NOT_FOUND`.
+
+**`db` fields (lab):**
+- `pluggyItems[]` (item ids) · `pluggyItemNames{itemId:nome}` (bank name per connection, editable) · `pluggySeen{plId:true}` (consumed tx ids, e.g. collapsed installment members).
+- `pluggyAccs{plAccId:{itemId,tipo,name,nome,incluir,ccId,configurado}}` — **import config, single source of truth**: BANK `incluir`; CREDIT `ccId` = app card id | `'new'` | `'ignore'`. Sync only imports accounts with `configurado` (require-config-before-import).
+- `contas[{id,nome,plAccId,itemId}]` — bank-account registry (mirrors `cartoes`); imported bank lançamentos get `contaId`; the Lançamentos page filters by conta (chips).
+- Imported records carry `plId` (stable Pluggy tx id) for dedup.
+
+**Flow (all in `lab.html`):** config (`abrirConfigImport`/`salvarConfigImport`, the single settings screen for connection names + which accounts to import + card de→para) → `sincronizarBanco` (gates on config, passes `accountIds`) → `buildSyncCandidates` (BANK→`db.lancs` sub='imp' with `contaId`; CREDIT→`db.ccLancs`; **installments collapsed** into one candidate — strip trailing `N/N` from the desc — that **replicates the full series** at merge) → `mostrarPreviewSync` (compact one-line rows, per-bank grouping, editable category, Eu/Família toggle, fixo suppression) → `confirmarMergeSync`.
+
+**Dedup layers:** (a) Pluggy×Pluggy by `plId`/`pluggySeen`; (b) Pluggy×existing by **date+value** (`syncDVKey` — names differ across sources) → pre-unchecked "possível duplicata"; (c) installments by `ccParcKey` (date-independent). The PDF/CSV fatura importers (`parsearFaturaItau/Santander`) also dedup **cross-source** so re-importing a fatura for a Pluggy-managed card doesn't duplicate: parcela by `ccParcKey` (hard skip), non-parcela by value+normalized-desc on the same card (soft "dup?").
+
 ## Critical invariants — do not break
 
 1. `pertenceCiclo` must use string comparison, not Date.
@@ -161,3 +211,6 @@ axios + Supabase load at the top with `integrity` (SRI). **Do not use jsDelivr `
 10. Reconciliation must not double-count: a reconciled avulso parcela is `pago` and absorbs its imported debit (one row); never create both. Parcelas are never deleted on reconciliation.
 11. Top-level SRI must point at immutable CDN files, never jsDelivr-minified `.min.js` (see External CDN libraries).
 12. Migration/repair functions are idempotent and guarded by a `db.mig*` flag; to re-apply after a logic change, use a new flag name.
+13. **Do all Pluggy work in `lab.html`, not `index.html`.** `lab.html` persists to `financas_lab`; never point it at `financas`. Bump the LAB `build N` on every lab change.
+14. Pluggy secrets live only in Edge Function env (Supabase secrets), never in `index.html`/`lab.html`/git. Anything under `pluggy/.env` / `supabase/.env` is gitignored — keep it that way (public repo).
+15. Pluggy dedup uses `plId` (Pluggy×Pluggy) + date/value + `ccParcKey` for installments; card transaction direction comes from keyword detection, not the `amount` sign or `type` field (both unreliable on CREDIT).

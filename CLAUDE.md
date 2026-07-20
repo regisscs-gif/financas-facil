@@ -189,6 +189,7 @@ Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura im
 
 **`db` fields (lab):**
 - `pluggyItems[]` (item ids) · `pluggyItemNames{itemId:nome}` (bank name per connection, editable) · `pluggySeen{plId:true}` (consumed tx ids, e.g. collapsed installment members).
+- `pluggyLastSync` ('YYYY-MM-DD', v103) — watermark of the last successful sync; the "trazer a partir de" field defaults to it (or hoje−90d on first sync), so `from` = last-sync date re-reads the retroactive window between sessions. `pluggyIgnored{plId:true}` (v103) — tx the user chose NOT to import; merged into the preview's `existing` set so they never re-appear. Rejected (unchecked) candidates at `confirmarMergeSync` are recorded here; "↩︎ Reabilitar ignorados" clears it.
 - `pluggyAccs{plAccId:{itemId,tipo,name,nome,incluir,ccId,configurado}}` — **import config, single source of truth**: BANK `incluir`; CREDIT `ccId` = app card id | `'new'` | `'ignore'`. Sync only imports accounts with `configurado` (require-config-before-import).
 - `contas[{id,nome,plAccId,itemId}]` — bank-account registry (mirrors `cartoes`); imported bank lançamentos get `contaId`; the Lançamentos page filters by conta (chips).
 - Imported records carry `plId` (stable Pluggy tx id) for dedup.

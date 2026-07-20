@@ -200,7 +200,8 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <div id="lab-conns"></div>
       <button class="sbtn" style="margin-top:8px" onclick="abrirConfigImport()">⚙️ Configurar contas & cartões</button>
       <label style="margin-top:10px">Trazer transações a partir de</label>
-      <input id="sync-from" type="date" style="margin-bottom:4px">
+      <input id="sync-from" type="date" style="margin-bottom:4px" oninput="atualizarSyncHint()">
+      <div id="sync-hint" style="font-size:11px;color:#7b80a0;margin-bottom:4px"></div>
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
     </div>
     <div class="card">
@@ -508,7 +509,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v102';
+var APP_VERSION = 'v103';
 
 var currentUser = null;
 var accessToken = null;
@@ -835,7 +836,8 @@ function renderCfg() {
   document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
   var sf=document.getElementById('sync-from');
-  if(sf&&!sf.value){var _d=new Date();_d.setDate(_d.getDate()-90);sf.value=_d.toISOString().slice(0,10);}
+  if(sf&&!sf.value)sf.value=syncFromDefault();
+  atualizarSyncHint();
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1887,6 +1889,34 @@ function salvarConfigImport(){
 }
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
 // NÃO mescla nada ainda — fase de validação do formato real.
+// Data "a partir de" padrão: marca d'água da última sync, ou hoje−90d na 1ª vez.
+function syncFromDefault(){
+  if(db.pluggyLastSync)return db.pluggyLastSync;
+  var d=new Date();d.setDate(d.getDate()-90);return d.toISOString().slice(0,10);
+}
+// Atualiza a dica sob o campo de data (última sync + de quando vai buscar).
+function atualizarSyncHint(){
+  var el=document.getElementById('sync-hint');if(!el)return;
+  function br(iso){var p=(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso;}
+  var sf=document.getElementById('sync-from');
+  var from=(sf&&sf.value)||syncFromDefault();
+  el.textContent=(db.pluggyLastSync?('Última sincronização: '+br(db.pluggyLastSync)):'Primeira sincronização (últimos 90 dias)')+' · buscando de '+br(from)+' em diante';
+}
+// Label do botão de conclusão do preview conforme marcados/desmarcados.
+function syncMergeLabel(nCheck,nUnc){
+  if(nCheck&&nUnc)return 'Concluir · importar '+nCheck+' / ignorar '+nUnc;
+  if(nCheck)return 'Importar '+nCheck+' selecionado'+(nCheck!==1?'s':'');
+  if(nUnc)return 'Ignorar '+nUnc+' (não mostrar de novo)';
+  return 'Concluir';
+}
+// Esquece os registros marcados como "não importar" (voltam a aparecer no próximo sync).
+function reabilitarIgnorados(){
+  var n=db.pluggyIgnored?Object.keys(db.pluggyIgnored).length:0;
+  if(!n){toast('Nenhum registro ignorado.');return;}
+  db.pluggyIgnored={};salvar();
+  toast('✓ '+n+' registro(s) reabilitado(s). Sincronize de novo para revê-los.');
+  if(syncData)mostrarPreviewSync(syncData);
+}
 async function sincronizarBanco(){
   if(!currentUser){toast('Faça login primeiro.');return;}
   var items=(db.pluggyItems||[]);
@@ -1898,7 +1928,7 @@ async function sincronizarBanco(){
   toast('Buscando transações...');
   try{
     var hdrs=await authHeaders();
-    var fromDate=(document.getElementById('sync-from')||{}).value||'';
+    var fromDate=(document.getElementById('sync-from')||{}).value||syncFromDefault();
     var all={accounts:[],transactions:[],counts:{accounts:0,transactions:0},item:null};
     for(var i=0;i<items.length;i++){
       var res=await axios.post(SYNC_URL,{itemId:items[i],from:fromDate,accountIds:importable},{headers:hdrs});
@@ -1925,6 +1955,10 @@ async function sincronizarBanco(){
     }
     all.counts={accounts:all.accounts.length,transactions:all.transactions.length};
     log('pluggy_sync',{itens:items.length,contas:all.counts.accounts,tx:all.counts.transactions});
+    // Marca d'água: próxima sync parte desta data (relê a janela retroativa entre sessões).
+    db.pluggyLastSync=new Date().toISOString().slice(0,10);
+    var sf3=document.getElementById('sync-from');if(sf3)sf3.value=db.pluggyLastSync;
+    atualizarSyncHint();salvar();
     mostrarPreviewSync(all);
   }catch(e){
     console.error(e);
@@ -2015,6 +2049,7 @@ function mostrarPreviewSync(data){
   db.lancs.forEach(function(l){if(l.plId)existing[l.plId]=true;if(l.sub!=='fat')existDV[syncDVKey(l.data,l.val)]=l.desc;});
   db.ccLancs.forEach(function(l){if(l.plId)existing[l.plId]=true;existDV[syncDVKey(l.data,l.val)]=l.desc;});
   if(db.pluggySeen)Object.keys(db.pluggySeen).forEach(function(p){existing[p]=true;});
+  if(db.pluggyIgnored)Object.keys(db.pluggyIgnored).forEach(function(p){existing[p]=true;}); // "não importar" memorizados
   var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
   // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
@@ -2031,7 +2066,7 @@ function mostrarPreviewSync(data){
 }
 function toggleSyncFixo(i,c){if(syncFixosSup[i])syncFixosSup[i].checked=c;}
 function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
-function toggleSyncCand(i){if(!syncCands[i])return;syncCands[i].checked=!syncCands[i].checked;var b=document.getElementById('sync-merge-btn');if(b){var n=syncCands.filter(function(x){return x.checked;}).length;b.textContent='Mesclar '+n+' selecionado'+(n!==1?'s':'');b.disabled=!n;}}
+function toggleSyncCand(i){if(!syncCands[i])return;syncCands[i].checked=!syncCands[i].checked;var b=document.getElementById('sync-merge-btn');if(b){var n=syncCands.filter(function(x){return x.checked;}).length;b.textContent=syncMergeLabel(n,syncCands.length-n);b.disabled=!syncCands.length;}}
 function setSyncCat(i,v){if(syncCands[i])syncCands[i].cat=v;}
 function titLabel(t){return t==='fam'?'👥 Família':'👤 Eu';}
 function toggleSyncTit(i){var c=syncCands[i];if(!c)return;c.titular=(c.titular==='fam')?'eu':'fam';var b=document.getElementById('tit-'+i);if(b){b.textContent=titLabel(c.titular);b.style.color=(c.titular==='fam')?'#fbbf24':'#a5b4fc';}}
@@ -2103,13 +2138,17 @@ function renderSyncPreview(){
   }
   if(!syncCands.length)h+='<div style="font-size:12px;color:#7b80a0;padding:8px 0">Nada novo para mesclar (tudo já está no app).</div>';
   var nCheck=syncCands.filter(function(c){return c.checked;}).length;
-  h+='<button id="sync-merge-btn" class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(nCheck?'':' disabled')+'>Mesclar '+nCheck+' selecionado'+(nCheck!==1?'s':'')+'</button>';
+  h+='<button id="sync-merge-btn" class="sbtn" style="margin-top:12px" onclick="confirmarMergeSync()"'+(syncCands.length?'':' disabled')+'>'+syncMergeLabel(nCheck,syncCands.length-nCheck)+'</button>';
+  var nIgn=db.pluggyIgnored?Object.keys(db.pluggyIgnored).length:0;
+  if(nIgn)h+='<button class="cbtn" style="margin-top:6px" onclick="reabilitarIgnorados()">↩︎ Reabilitar ignorados ('+nIgn+')</button>';
   document.getElementById('sync-content').innerHTML=h;
 }
 function confirmarMergeSync(){
   var cands=syncCands.filter(function(c){return c.checked;});
-  if(!cands.length){toast('Nada selecionado.');return;}
+  var rejeitados=syncCands.filter(function(c){return !c.checked;});
+  if(!cands.length&&!rejeitados.length){toast('Nada para processar.');return;}
   if(!db.pluggySeen)db.pluggySeen={};
+  if(!db.pluggyIgnored)db.pluggyIgnored={};
   if(!db.contas)db.contas=[];
   if(!db.pluggyAccs)db.pluggyAccs={};
   // Resolve o cartão (de→para) de cada conta CREDIT pela CONFIG: existente | criar | ignorar.
@@ -2173,11 +2212,18 @@ function confirmarMergeSync(){
     var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
     if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
   });
-  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length});
+  // Registros desmarcados → memória de "não importar" (não reaparecem no próximo sync).
+  var nIgn=0;
+  rejeitados.forEach(function(c){
+    var ids=(c.plIds&&c.plIds.length)?c.plIds:(c.plId?[c.plId]:[]);
+    ids.forEach(function(p){if(p&&!db.pluggyIgnored[p]){db.pluggyIgnored[p]=true;nIgn++;}});
+  });
+  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn});
   syncFaturas();salvar();render();
   fechar('ov-sync');
-  var msg='✓ Mesclado: '+addL+' em conta corrente + '+addC+' no cartão.';
-  if(suprimidos.length)msg+=' '+suprimidos.length+' fixo(s) suprimido(s).';
+  var msg='✓ '+(addL+addC)+' importado(s)';
+  if(nIgn)msg+=' · '+nIgn+' ignorado(s)';
+  if(suprimidos.length)msg+=' · '+suprimidos.length+' fixo(s) suprimido(s)';
   toast(msg);
 }
 function selecionarArquivoCartao(ccId){

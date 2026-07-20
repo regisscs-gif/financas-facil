@@ -203,6 +203,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <input id="sync-from" type="date" style="margin-bottom:4px" oninput="atualizarSyncHint()">
       <div id="sync-hint" style="font-size:11px;color:#7b80a0;margin-bottom:4px"></div>
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
+      <button id="btn-ignorados" class="sbtn" style="margin-top:8px;background:#22263a;display:none" onclick="abrirIgnorados()">🚫 Registros ignorados</button>
     </div>
     <div class="card">
       <div style="font-size:15px;font-weight:700;margin-bottom:14px">⚙️ Ciclo Financeiro</div>
@@ -492,6 +493,15 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-ignorados">
+  <div class="mod" style="max-width:520px">
+    <h3>🚫 Registros ignorados</h3>
+    <div style="font-size:12px;color:#7b80a0;margin-bottom:8px">Transações que você marcou como "não importar". Restaure para que voltem a aparecer na próxima sincronização.</div>
+    <div id="ignorados-content" style="max-height:60vh;overflow-y:auto"></div>
+    <button class="cbtn" onclick="fechar('ov-ignorados')">Fechar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-imp-cfg">
   <div class="mod" style="max-width:560px">
     <h3>⚙️ Configurar importação</h3>
@@ -509,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v103';
+var APP_VERSION = 'v104';
 
 var currentUser = null;
 var accessToken = null;
@@ -838,6 +848,7 @@ function renderCfg() {
   var sf=document.getElementById('sync-from');
   if(sf&&!sf.value)sf.value=syncFromDefault();
   atualizarSyncHint();
+  atualizarBtnIgnorados();
   renderCats();
 }
 function fixosVigentes(m,y){
@@ -1917,6 +1928,46 @@ function reabilitarIgnorados(){
   toast('✓ '+n+' registro(s) reabilitado(s). Sincronize de novo para revê-los.');
   if(syncData)mostrarPreviewSync(syncData);
 }
+// Atualiza o botão "Registros ignorados (N)" na Config (esconde quando 0).
+function atualizarBtnIgnorados(){
+  var bi=document.getElementById('btn-ignorados');if(!bi)return;
+  var ni=db.pluggyIgnored?Object.keys(db.pluggyIgnored).length:0;
+  bi.textContent='🚫 Registros ignorados'+(ni?' ('+ni+')':'');
+  bi.style.display=ni?'block':'none';
+}
+// Lista gerenciável dos registros ignorados, com restauração individual.
+function abrirIgnorados(){renderIgnorados();document.getElementById('ov-ignorados').classList.add('on');}
+function renderIgnorados(){
+  var ig=db.pluggyIgnored||{},keys=Object.keys(ig),h='';
+  if(!keys.length){h='<div style="font-size:13px;color:#7b80a0;text-align:center;padding:16px">Nenhum registro ignorado.</div>';}
+  else{
+    keys.sort(function(a,b){var da=(ig[a]&&ig[a].data)||'',dz=(ig[b]&&ig[b].data)||'';return dz.localeCompare(da);});
+    keys.forEach(function(p){
+      var info=(ig[p]&&typeof ig[p]==='object')?ig[p]:{};
+      var dp=(info.data||'').split('-'),quando=dp.length===3?(dp[2]+'/'+dp[1]):'—';
+      var alvo=info.target==='cc'?'💳 ':info.target==='lancs'?'🏦 ':'';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:5px">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+alvo+escHtml(info.desc||'(sem detalhes)')+'</div><div style="font-size:10px;color:#7b80a0">'+quando+'</div></div>'
+        +(info.val!=null?'<div style="font-size:13px;font-weight:700;color:#f87171;flex-shrink:0">-'+fmt(info.val)+'</div>':'')
+        +'<button onclick="restaurarIgnorado(\''+escHtml(String(p))+'\')" style="background:rgba(129,140,248,.2);color:#a5b4fc;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600;flex-shrink:0">↩︎ Restaurar</button>'
+        +'</div>';
+    });
+    h+='<button class="cbtn" style="margin-top:6px" onclick="restaurarTodosIgnorados()">↩︎ Restaurar todos ('+keys.length+')</button>';
+  }
+  document.getElementById('ignorados-content').innerHTML=h;
+}
+function restaurarIgnorado(plId){
+  if(db.pluggyIgnored&&db.pluggyIgnored[plId]!==undefined){delete db.pluggyIgnored[plId];salvar();log('pluggy_ignore_restore',{plId:String(plId).slice(0,8)});}
+  renderIgnorados();atualizarBtnIgnorados();
+  toast('✓ Restaurado. Aparecerá na próxima sincronização.');
+}
+function restaurarTodosIgnorados(){
+  var n=db.pluggyIgnored?Object.keys(db.pluggyIgnored).length:0;
+  if(!n)return;
+  db.pluggyIgnored={};salvar();log('pluggy_ignore_restore_all',{n:n});
+  renderIgnorados();atualizarBtnIgnorados();
+  toast('✓ '+n+' registro(s) restaurado(s). Aparecerão na próxima sincronização.');
+}
 async function sincronizarBanco(){
   if(!currentUser){toast('Faça login primeiro.');return;}
   var items=(db.pluggyItems||[]);
@@ -2216,7 +2267,7 @@ function confirmarMergeSync(){
   var nIgn=0;
   rejeitados.forEach(function(c){
     var ids=(c.plIds&&c.plIds.length)?c.plIds:(c.plId?[c.plId]:[]);
-    ids.forEach(function(p){if(p&&!db.pluggyIgnored[p]){db.pluggyIgnored[p]=true;nIgn++;}});
+    ids.forEach(function(p){if(p&&!db.pluggyIgnored[p]){db.pluggyIgnored[p]={desc:c.desc,val:c.val,data:c.data,target:c.target};nIgn++;}});
   });
   log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn});
   syncFaturas();salvar();render();

@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v104';
+var APP_VERSION = 'v105';
 
 var currentUser = null;
 var accessToken = null;
@@ -2006,10 +2006,8 @@ async function sincronizarBanco(){
     }
     all.counts={accounts:all.accounts.length,transactions:all.transactions.length};
     log('pluggy_sync',{itens:items.length,contas:all.counts.accounts,tx:all.counts.transactions});
-    // Marca d'água: próxima sync parte desta data (relê a janela retroativa entre sessões).
-    db.pluggyLastSync=new Date().toISOString().slice(0,10);
-    var sf3=document.getElementById('sync-from');if(sf3)sf3.value=db.pluggyLastSync;
-    atualizarSyncHint();salvar();
+    // NÃO avança a marca d'água aqui: só ao CONCLUIR a triagem (confirmarMergeSync).
+    // Se o usuário cancelar o preview, o próximo sync relê a mesma janela (nada some).
     mostrarPreviewSync(all);
   }catch(e){
     console.error(e);
@@ -2269,6 +2267,9 @@ function confirmarMergeSync(){
     var ids=(c.plIds&&c.plIds.length)?c.plIds:(c.plId?[c.plId]:[]);
     ids.forEach(function(p){if(p&&!db.pluggyIgnored[p]){db.pluggyIgnored[p]={desc:c.desc,val:c.val,data:c.data,target:c.target};nIgn++;}});
   });
+  // Marca d'água avança só agora (triagem concluída): próximo sync parte desta data.
+  db.pluggyLastSync=new Date().toISOString().slice(0,10);
+  var sfm=document.getElementById('sync-from');if(sfm)sfm.value=db.pluggyLastSync;
   log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn});
   syncFaturas();salvar();render();
   fechar('ov-sync');

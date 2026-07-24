@@ -14,6 +14,7 @@ Two users with separate Supabase accounts: **Régis** (Itaú + Nubank) and **Car
 - **`index.html`** — the **production** app (single-file). As of **v101** it includes the promoted **Pluggy / Open Finance** integration (previously built in `lab.html`).
 - **`lab.html`** — parallel copy of `index.html` used as an isolated staging environment (persists to table `financas_lab`, never touches production data). Kept for validating future changes before promotion; scheduled to be retired once production is stable. Still carries LAB-only helpers (Zerar lab, Copiar produção→lab, injeção manual de itemId, `includeSandbox:true`) that must **never** be promoted to `index.html`.
 - **`sw.js`** — service worker (production only; `lab.html` registers none).
+- **`.github/workflows/pages.yml`** — GitHub Actions workflow that deploys the repo root to GitHub Pages. Replaced the legacy Pages builder (see Versioning & Deploy).
 - **`supabase/functions/{connect-token,sync-transactions}/`** — Deno Edge Functions that hold the Pluggy secrets.
 - **`pluggy/*.js`** — local Node scripts to test Pluggy without the browser (read `pluggy/.env`, gitignored).
 - **`manifest.json`, `icon-*`** — PWA assets. **`DOCUMENTACAO.md`** — long-form pt-BR product doc.
@@ -32,7 +33,19 @@ node -e "var fs=require('fs'),src=fs.readFileSync('lab.html','utf8'),b=src.split
 python3 -m http.server 8000    # run in the repo root; open http://localhost:8000/lab.html (NOT file://)
 ```
 
-`lab.html`'s `redirectTo` is dynamic (`window.location.origin + pathname`), so Google login works on localhost **once `http://localhost:8000/lab.html` is added to Supabase → Authentication → Redirect URLs**. Every edit → just reload. `.nojekyll` keeps Pages builds fast; append `?v=N` to the live URL to bust the CDN cache.
+`lab.html`'s `redirectTo` is dynamic (`window.location.origin + pathname`), so Google login works on localhost **once `http://localhost:8000/lab.html` is added to Supabase → Authentication → Redirect URLs**. **Production `index.html` uses a FIXED `redirectTo`** (the Pages URL), so localhost Google login does not round-trip there — validate `index.html` changes with the headless smoke check below and/or on the deployed URL (`?cb=$(date +%s)` to bust CDN cache).
+
+**Headless smoke check (no login needed)** — catches load-time JS errors and confirms the app shell renders after a `cp`/refactor. Serve locally, then:
+
+```bash
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+"$CHROME" --headless --disable-gpu --enable-logging=stderr --v=1 --virtual-time-budget=6000 \
+  --dump-dom http://localhost:8000/index.html 2>/tmp/c.log >/tmp/dom.html
+grep -iE "uncaught|is not defined|is not a function|referenceerror|typeerror" /tmp/c.log \
+  | grep -viE "ServiceWorker|financas-facil/sw.js|manifest"   # the SW/manifest 404s are local-only (Pages path prefix)
+```
+
+A cross-reference sanity check (every inline `on*` handler maps to a defined function; every `getElementById` id exists) also catches dangling references after edits.
 
 **Deploy an Edge Function** (Supabase CLI; no Docker required):
 
@@ -45,7 +58,8 @@ supabase secrets set --env-file supabase/.env   # PLUGGY_CLIENT_ID / PLUGGY_CLIE
 
 ## Versioning & Deploy
 
-- **Production (`index.html`):** bump `APP_VERSION` in `index.html` **and** `CACHE` in `sw.js` together on every production commit (must match, e.g. `'v100'` / `'ff-v100'`). Commit format `feat(vN):` / `fix(vN):`. Push to `main` → live in ~1 min.
+- **Production (`index.html`):** bump `APP_VERSION` in `index.html` **and** `CACHE` in `sw.js` together on every production commit (must match, e.g. `'v104'` / `'ff-v104'`). Commit format `feat(vN):` / `fix(vN):`. Push to `main` → the GitHub Actions workflow deploys in ~30s.
+- **Deploy is via GitHub Actions**, not the legacy Pages builder (`build_type: workflow`). The legacy builder hung at dispatch (`duration: 0`, "building" for >1h) and stopped publishing — do NOT diagnose deploys with `gh api .../pages/builds`. Instead: `gh run list --workflow=pages.yml` and `gh run view <id>`. Confirm live: `curl -s "https://regisscs-gif.github.io/financas-facil/index.html?cb=$(date +%s)" | grep APP_VERSION`. Pages CDN cache is ~10min (`max-age=600`) — use `?cb=`/`?v=N` to bust.
 - **Lab (`lab.html`):** version is `'v100-lab · build N'` (in `APP_VERSION`, shown in the LAB banner). Bump **build N** on every lab change — it's the only way to confirm a reload picked up new code. Commit format `feat(lab):` / `fix(lab):`. `lab.html` does NOT touch `sw.js` or `index.html`.
 - **Production is UNFROZEN as of v101** (Pluggy promoted). Regular production edits to `index.html` / `sw.js` resume the normal bump-both rule above. `lab.html` remains the isolated staging copy for risky changes.
 - Docs-only commits (this file) do not bump any version.
@@ -173,6 +187,10 @@ axios + Supabase load at the top with `integrity` (SRI). **Do not use jsDelivr `
 
 `log(action, data)` writes to `localStorage` (`ff_log`, max 300 entries). When diagnosing bugs, ask the user to copy from Config → Log de atividade → "Copiar log completo".
 
+### Backup (v102)
+
+Config → 💾 Backup: `exportarBackup()` downloads the whole in-memory `db` as JSON (`financas-backup-<email>-<date>.json`); `restaurarBackup(input)` reads a JSON file, validates it looks like a `db` (has `lancs[]`), confirms, then `db = Object.assign({}, db, parsed)` (merges over defaults, same as `carregarDados`) and persists. Each user backs up their own account.
+
 ## Pluggy / Open Finance (promoted to production in v101)
 
 Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura import for connected accounts. **Built and tested in `lab.html`, promoted to `index.html` in v101.** `lab.html` stays as the staging copy for future changes; the LAB-only helpers there (Zerar lab / Copiar produção→lab / injeção manual de itemId / `includeSandbox:true`) are stripped from production `index.html` (which uses `includeSandbox:false`).
@@ -189,12 +207,12 @@ Automatic bank sync (Open Finance aggregator). Replaces manual extrato/fatura im
 
 **`db` fields (lab):**
 - `pluggyItems[]` (item ids) · `pluggyItemNames{itemId:nome}` (bank name per connection, editable) · `pluggySeen{plId:true}` (consumed tx ids, e.g. collapsed installment members).
-- `pluggyLastSync` ('YYYY-MM-DD', v103) — watermark of the last successful sync; the "trazer a partir de" field defaults to it (or hoje−90d on first sync), so `from` = last-sync date re-reads the retroactive window between sessions. `pluggyIgnored{plId:true}` (v103) — tx the user chose NOT to import; merged into the preview's `existing` set so they never re-appear. Rejected (unchecked) candidates at `confirmarMergeSync` are recorded here; "↩︎ Reabilitar ignorados" clears it.
+- `pluggyLastSync` ('YYYY-MM-DD', v103) — watermark of the last successful sync; the "trazer a partir de" field defaults to it (or hoje−90d on first sync), so `from` = last-sync date re-reads the retroactive window between sessions. `pluggyIgnored{plId:{desc,val,data,target}}` (v103; metadata added v104, back-compat with old `{plId:true}`) — tx the user chose NOT to import; merged into the preview's `existing` set so they never re-appear. Rejected (unchecked) candidates at `confirmarMergeSync` are recorded here. Managed via **Config → 🚫 Registros ignorados** (`abrirIgnorados`/`renderIgnorados`, modal `#ov-ignorados`): per-item `restaurarIgnorado(plId)` + `restaurarTodosIgnorados()`; the in-preview `reabilitarIgnorados()` clears all at once.
 - `pluggyAccs{plAccId:{itemId,tipo,name,nome,incluir,ccId,configurado}}` — **import config, single source of truth**: BANK `incluir`; CREDIT `ccId` = app card id | `'new'` | `'ignore'`. Sync only imports accounts with `configurado` (require-config-before-import).
 - `contas[{id,nome,plAccId,itemId}]` — bank-account registry (mirrors `cartoes`); imported bank lançamentos get `contaId`; the Lançamentos page filters by conta (chips).
 - Imported records carry `plId` (stable Pluggy tx id) for dedup.
 
-**Flow (all in `lab.html`):** config (`abrirConfigImport`/`salvarConfigImport`, the single settings screen for connection names + which accounts to import + card de→para) → `sincronizarBanco` (gates on config, passes `accountIds`) → `buildSyncCandidates` (BANK→`db.lancs` sub='imp' with `contaId`; CREDIT→`db.ccLancs`; **installments collapsed** into one candidate — strip trailing `N/N` from the desc — that **replicates the full series** at merge) → `mostrarPreviewSync` (compact one-line rows, per-bank grouping, editable category, Eu/Família toggle, fixo suppression) → `confirmarMergeSync`.
+**Flow:** config (`abrirConfigImport`/`salvarConfigImport`, the single settings screen for connection names + which accounts to import + card de→para) → `sincronizarBanco` (gates on config, passes `accountIds`) → `buildSyncCandidates` (BANK→`db.lancs` sub='imp' with `contaId`; CREDIT→`db.ccLancs`; **installments collapsed** into one candidate — strip trailing `N/N` from the desc — that **replicates the full series** at merge) → `mostrarPreviewSync` (compact one-line rows, per-bank grouping, editable category, Eu/Família toggle, fixo suppression) → `confirmarMergeSync`.
 
 **Dedup layers:** (a) Pluggy×Pluggy by `plId`/`pluggySeen`; (b) Pluggy×existing by **date+value** (`syncDVKey` — names differ across sources) → pre-unchecked "possível duplicata"; (c) installments by `ccParcKey` (date-independent). The PDF/CSV fatura importers (`parsearFaturaItau/Santander`) also dedup **cross-source** so re-importing a fatura for a Pluggy-managed card doesn't duplicate: parcela by `ccParcKey` (hard skip), non-parcela by value+normalized-desc on the same card (soft "dup?").
 

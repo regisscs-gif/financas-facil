@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v107';
+var APP_VERSION = 'v108';
 
 var currentUser = null;
 var accessToken = null;
@@ -1677,12 +1677,20 @@ function renderConfDiff(){
   if(faltando.length){
     h+='<div style="margin-bottom:6px;font-size:12px;font-weight:700;color:#fbbf24">⬇ Na fatura, faltando no site ('+faltando.length+')</div>';
     faltando.forEach(function(it,i){
+      if(!it.titular)it.titular='eu';
       var dp=it.data.split('-');var pt=it.isParcela?' <span class="tag tprc">'+it.pn+'/'+it.pt+'</span>':'';
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:5px">'
-        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(it.desc)+pt+'</div><div style="font-size:10px;color:#7b80a0">'+escHtml(it.cat||'')+' · '+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
-        +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(it.val)+'</div>'
-        +'<button onclick="confAddFaltante('+i+')" style="background:rgba(129,140,248,.2);color:#a5b4fc;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">+ Adicionar</button>'
-        +'</div>';
+      var catOpts=(db.catsE||[]).map(function(c){return '<option value="'+escHtml(c)+'"'+(c===it.cat?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+      h+='<div style="background:#22263a;border-radius:8px;margin-bottom:5px;padding:6px 8px">'
+        +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(it.desc)+pt+'</div><div style="font-size:10px;color:#7b80a0">'+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
+          +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(it.val)+'</div>'
+          +'<button onclick="confAddFaltante('+i+')" style="background:rgba(129,140,248,.2);color:#a5b4fc;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">+ Adicionar</button>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px;margin-top:5px">'
+          +'<select onchange="confSetCat('+i+',this.value)" style="flex:1;font-size:11px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:4px;color:#e8eaf6;padding:3px 4px">'+catOpts+'</select>'
+          +'<button id="conf-tit-'+i+'" onclick="confSetTit('+i+')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:none;cursor:pointer;font-weight:700;flex-shrink:0;background:rgba(129,140,248,.2);color:'+(it.titular==='fam'?'#fbbf24':'#a5b4fc')+'">'+(it.titular==='fam'?'👥 Família':'👤 Eu')+'</button>'
+        +'</div>'
+      +'</div>';
     });
   }
   if(sobrando.length){
@@ -1698,9 +1706,11 @@ function renderConfDiff(){
   }
   document.getElementById('conf-fatura-content').innerHTML=h;
 }
+function confSetCat(i,v){if(confLastFalt[i])confLastFalt[i].cat=v;}
+function confSetTit(i){var it=confLastFalt[i];if(!it)return;it.titular=(it.titular==='fam')?'eu':'fam';var b=document.getElementById('conf-tit-'+i);if(b){b.textContent=(it.titular==='fam')?'👥 Família':'👤 Eu';b.style.color=(it.titular==='fam')?'#fbbf24':'#a5b4fc';}}
 function confAddFaltante(i){
   var it=confLastFalt[i];if(!it)return;
-  var nl={id:db.nid++,ccId:confCcId,desc:it.desc,val:it.val,data:it.data,cat:it.cat,titular:'eu',csvKey:it.csvKey,fatMk:mesKey(curM,curY)};
+  var nl={id:db.nid++,ccId:confCcId,desc:it.desc,val:it.val,data:it.data,cat:it.cat,titular:it.titular||'eu',csvKey:it.csvKey,fatMk:mesKey(curM,curY)};
   if(it.isParcela){nl.sub='pa';nl.pn=it.pn;nl.pt=it.pt;}else{nl.sub='av';}
   db.ccLancs.push(nl);
   log('conf_add',{ccId:confCcId,desc:it.desc,val:it.val});

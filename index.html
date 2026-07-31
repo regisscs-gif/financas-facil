@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v106';
+var APP_VERSION = 'v107';
 
 var currentUser = null;
 var accessToken = null;
@@ -876,9 +876,11 @@ function periodoFatura(cc,m,y){
 function gastosCC(ccId,m,y){
   var cc=db.cartoes.find(function(c){return c.id===ccId;});
   if(!cc)return[];
+  var mk=mesKey(m,y);
   var p=periodoFatura(cc,m,y);
   return db.ccLancs.filter(function(l){
     if(l.ccId!==ccId)return false;
+    if(l.fatMk)return l.fatMk===mk;   // forçado a uma fatura específica (ex.: compra pós-fechamento adicionada na conferência)
     var d=new Date(l.data+'T12:00:00');
     return d>=p.ini&&d<=p.fim;
   });
@@ -890,6 +892,7 @@ function syncFaturas(){
   var combos={};
   db.ccLancs.forEach(function(l){
     var cc=db.cartoes.find(function(c){return c.id===l.ccId;});if(!cc)return;
+    if(l.fatMk){combos[l.ccId+':'+l.fatMk]={ccId:l.ccId,m:+l.fatMk.split('-')[1]-1,y:+l.fatMk.split('-')[0]};return;}
     var parts=l.data.split('-');var ey=+parts[0],em0=+parts[1]-1;
     for(var delta=-1;delta<=2;delta++){
       var tm=em0+delta,ty=ey;
@@ -1697,7 +1700,7 @@ function renderConfDiff(){
 }
 function confAddFaltante(i){
   var it=confLastFalt[i];if(!it)return;
-  var nl={id:db.nid++,ccId:confCcId,desc:it.desc,val:it.val,data:it.data,cat:it.cat,titular:'eu',csvKey:it.csvKey};
+  var nl={id:db.nid++,ccId:confCcId,desc:it.desc,val:it.val,data:it.data,cat:it.cat,titular:'eu',csvKey:it.csvKey,fatMk:mesKey(curM,curY)};
   if(it.isParcela){nl.sub='pa';nl.pn=it.pn;nl.pt=it.pt;}else{nl.sub='av';}
   db.ccLancs.push(nl);
   log('conf_add',{ccId:confCcId,desc:it.desc,val:it.val});

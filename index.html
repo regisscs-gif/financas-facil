@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v108';
+var APP_VERSION = 'v109';
 
 var currentUser = null;
 var accessToken = null;
@@ -3225,10 +3225,12 @@ function abrirResumoFamilia(ccId){
   document.getElementById('ov-resumo-familia').classList.add('on');
 }
 function compartilharResumoFamilia(){
+  // CRLF: Outlook/Windows colapsa quebras de linha só com \n (mostra só a 1ª linha).
+  var txt=_resumoFamiliaText.replace(/\r?\n/g,'\r\n');
   if(navigator.share){
-    navigator.share({title:'Gastos Família',text:_resumoFamiliaText}).catch(function(){});
+    navigator.share({title:'Gastos Família',text:txt}).catch(function(){});
   }else{
-    navigator.clipboard.writeText(_resumoFamiliaText).then(function(){toast('Copiado!');}).catch(function(){toast('Não foi possível copiar.');});
+    navigator.clipboard.writeText(txt).then(function(){toast('Copiado!');}).catch(function(){toast('Não foi possível copiar.');});
   }
 }
 function renderCCs(){

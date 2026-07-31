@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v105';
+var APP_VERSION = 'v106';
 
 var currentUser = null;
 var accessToken = null;
@@ -1636,14 +1636,27 @@ function renderConfDiff(){
   // Casa por descrição normalizada + valor (multiconjunto): consome 1 do site por item da fatura.
   var bucket={};
   site.forEach(function(l){var k=dkNorm(l.desc)+'|'+Math.round(Math.abs(l.val)*100);(bucket[k]=bucket[k]||[]).push(l);});
-  var faltando=[];
+  var falt1=[];
   confFatItems.forEach(function(it){
     var k=dkNorm(it.desc)+'|'+Math.round(Math.abs(it.val)*100);
     if(bucket[k]&&bucket[k].length)bucket[k].shift();
-    else faltando.push(it);
+    else falt1.push(it);
   });
   var sobrando=[];
   Object.keys(bucket).forEach(function(k){bucket[k].forEach(function(l){sobrando.push(l);});});
+  // 2º passe: parcelas cuja descrição diverge (parcela futura prevista/Pluggy vs. desc do banco na
+  // fatura) casam por identidade de parcela = valor + n/t no mesmo cartão. Descrições do banco variam,
+  // então não exigimos que batam — evita a mesma parcela aparecer nos dois lados.
+  var faltando=[];
+  falt1.forEach(function(it){
+    if(it.isParcela){
+      var vc=Math.round(Math.abs(it.val)*100),idx=-1;
+      for(var j=0;j<sobrando.length;j++){var l=sobrando[j];
+        if(l.sub==='pa'&&l.pn==it.pn&&l.pt==it.pt&&Math.round(Math.abs(l.val)*100)===vc){idx=j;break;}}
+      if(idx>=0){sobrando.splice(idx,1);return;}
+    }
+    faltando.push(it);
+  });
   confLastFalt=faltando;
   var totFat=confFatItems.reduce(function(s,it){return s+Math.abs(it.val);},0);
   var totSite=site.reduce(function(s,l){return s+Math.abs(l.val);},0);

@@ -409,7 +409,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   <div class="mod">
     <h3>Resumo Família</h3>
     <div id="resumo-familia-content" style="font-family:monospace;font-size:11px;white-space:pre-wrap;background:#22263a;padding:12px;border-radius:8px;margin-bottom:14px;color:#e8eaf6;line-height:1.6;overflow-x:auto"></div>
-    <button class="sbtn" onclick="compartilharResumoFamilia()">📤 Compartilhar</button>
+    <button class="sbtn" onclick="compartilharResumoFamilia()">📋 Copiar</button>
     <button class="cbtn" onclick="fechar('ov-resumo-familia')">Fechar</button>
   </div>
 </div>
@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v109';
+var APP_VERSION = 'v110';
 
 var currentUser = null;
 var accessToken = null;
@@ -3225,13 +3225,26 @@ function abrirResumoFamilia(ccId){
   document.getElementById('ov-resumo-familia').classList.add('on');
 }
 function compartilharResumoFamilia(){
-  // CRLF: Outlook/Windows colapsa quebras de linha só com \n (mostra só a 1ª linha).
-  var txt=_resumoFamiliaText.replace(/\r?\n/g,'\r\n');
-  if(navigator.share){
-    navigator.share({title:'Gastos Família',text:txt}).catch(function(){});
-  }else{
-    navigator.clipboard.writeText(txt).then(function(){toast('Copiado!');}).catch(function(){toast('Não foi possível copiar.');});
+  // Copia direto p/ a área de transferência em formato rico (text/plain + text/html).
+  // O <pre> no HTML faz o Outlook (macOS e Windows) preservar quebras de linha e alinhamento
+  // — navigator.share perdia linhas e o title duplicava o cabeçalho.
+  var plain=_resumoFamiliaText.replace(/\r?\n/g,'\r\n');
+  var html='<pre style="font-family:Menlo,Consolas,monospace;font-size:12px;margin:0">'+escHtml(_resumoFamiliaText)+'</pre>';
+  function fallback(){
+    var ta=document.createElement('textarea');ta.value=plain;ta.style.position='fixed';ta.style.top='0';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    var ok=false;try{ok=document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);toast(ok?'✓ Copiado!':'Não foi possível copiar.');
   }
+  if(navigator.clipboard&&window.ClipboardItem){
+    try{
+      var item=new ClipboardItem({'text/plain':new Blob([plain],{type:'text/plain'}),'text/html':new Blob([html],{type:'text/html'})});
+      navigator.clipboard.write([item]).then(function(){toast('✓ Copiado!');}).catch(fallback);
+      return;
+    }catch(e){}
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(plain).then(function(){toast('✓ Copiado!');}).catch(fallback);}
+  else fallback();
 }
 function renderCCs(){
   if(curCCId){renderFatura(curCCId);return;}var el=document.getElementById('cc-list');

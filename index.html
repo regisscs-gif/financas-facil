@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v110';
+var APP_VERSION = 'v111';
 
 var currentUser = null;
 var accessToken = null;
@@ -3542,9 +3542,14 @@ async function iniciarDados(){
 init();
 
 if('serviceWorker' in navigator){
+  // hadController: se a página já estava sob controle de um SW ao carregar, um controllerchange
+  // posterior = UPDATE real (novo sw.js) → recarrega. Sem controller ao carregar, o evento é só
+  // a 1ª reivindicação (clients.claim) — NÃO recarrega (era isso que fazia a tela piscar toda vez).
+  var hadController=!!navigator.serviceWorker.controller,refreshing=false;
   navigator.serviceWorker.register('/financas-facil/sw.js');
-  // Quando um novo SW assume controle, recarrega para garantir código atualizado
   navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if(!hadController||refreshing)return;
+    refreshing=true;
     window.location.reload();
   });
 }

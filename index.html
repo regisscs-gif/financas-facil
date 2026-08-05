@@ -202,6 +202,9 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
       <label style="margin-top:10px">Trazer transações a partir de</label>
       <input id="sync-from" type="date" style="margin-bottom:4px" oninput="atualizarSyncHint()">
       <div id="sync-hint" style="font-size:11px;color:#7b80a0;margin-bottom:4px"></div>
+      <label style="margin-top:8px">Recuo automático da janela (dias)</label>
+      <input id="sync-buffer" type="number" min="0" max="90" step="1" style="margin-bottom:4px" oninput="onSyncBuffer()">
+      <div style="font-size:11px;color:#7b80a0;margin-bottom:4px">A cada sync a janela parte da última sincronização menos estes dias — capta lançamentos que o Open Finance adiciona com atraso.</div>
       <button class="sbtn" style="margin-top:8px" onclick="sincronizarBanco()">🔄 Sincronizar transações (preview)</button>
       <button id="btn-ignorados" class="sbtn" style="margin-top:8px;background:#22263a;display:none" onclick="abrirIgnorados()">🚫 Registros ignorados</button>
     </div>
@@ -519,7 +522,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v112';
+var APP_VERSION = 'v113';
 
 var currentUser = null;
 var accessToken = null;
@@ -845,6 +848,8 @@ function renderCfg() {
   document.getElementById('cfg-modelo').value = cfg.modelo;
   document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
+  var sb=document.getElementById('sync-buffer');
+  if(sb)sb.value=syncBufferDias();
   var sf=document.getElementById('sync-from');
   if(sf&&!sf.value)sf.value=syncFromDefault();
   atualizarSyncHint();
@@ -1927,14 +1932,23 @@ function salvarConfigImport(){
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
 // NÃO mescla nada ainda — fase de validação do formato real.
 // Data "a partir de" padrão: marca d'água da última sync, ou hoje−90d na 1ª vez.
-var SYNC_BUFFER_DIAS=10; // recua a janela p/ pegar lançamentos que o Open Finance adiciona com atraso
+var SYNC_BUFFER_PADRAO=10; // recuo padrão (dias) p/ pegar lançamentos que o Open Finance adiciona com atraso
+function syncBufferDias(){var n=(db.pluggyBufferDias==null)?SYNC_BUFFER_PADRAO:db.pluggyBufferDias;return Math.max(0,Math.min(90,n|0));}
 function syncFromDefault(){
   if(db.pluggyLastSync){
     // recua o buffer a partir da última sync: capta transações retroativas sem re-perguntar
     // (ignorados já ficam em db.pluggyIgnored e importados são deduzados por plId).
-    var d=new Date(db.pluggyLastSync+'T12:00:00');d.setDate(d.getDate()-SYNC_BUFFER_DIAS);return d.toISOString().slice(0,10);
+    var d=new Date(db.pluggyLastSync+'T12:00:00');d.setDate(d.getDate()-syncBufferDias());return d.toISOString().slice(0,10);
   }
   var d=new Date();d.setDate(d.getDate()-90);return d.toISOString().slice(0,10);
+}
+// Salva o recuo configurado e re-preenche o campo de data + dica.
+function onSyncBuffer(){
+  var el=document.getElementById('sync-buffer');if(!el)return;
+  var n=parseInt(el.value,10);if(isNaN(n))return;
+  db.pluggyBufferDias=Math.max(0,Math.min(90,n));
+  var sf=document.getElementById('sync-from');if(sf)sf.value=syncFromDefault();
+  atualizarSyncHint();salvar();
 }
 // Atualiza a dica sob o campo de data (última sync + de quando vai buscar).
 function atualizarSyncHint(){

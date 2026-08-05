@@ -519,7 +519,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v111';
+var APP_VERSION = 'v112';
 
 var currentUser = null;
 var accessToken = null;
@@ -1927,8 +1927,13 @@ function salvarConfigImport(){
 // Puxa contas + transações do(s) item(ns) Pluggy conectado(s) e mostra um PREVIEW.
 // NÃO mescla nada ainda — fase de validação do formato real.
 // Data "a partir de" padrão: marca d'água da última sync, ou hoje−90d na 1ª vez.
+var SYNC_BUFFER_DIAS=10; // recua a janela p/ pegar lançamentos que o Open Finance adiciona com atraso
 function syncFromDefault(){
-  if(db.pluggyLastSync)return db.pluggyLastSync;
+  if(db.pluggyLastSync){
+    // recua o buffer a partir da última sync: capta transações retroativas sem re-perguntar
+    // (ignorados já ficam em db.pluggyIgnored e importados são deduzados por plId).
+    var d=new Date(db.pluggyLastSync+'T12:00:00');d.setDate(d.getDate()-SYNC_BUFFER_DIAS);return d.toISOString().slice(0,10);
+  }
   var d=new Date();d.setDate(d.getDate()-90);return d.toISOString().slice(0,10);
 }
 // Atualiza a dica sob o campo de data (última sync + de quando vai buscar).
@@ -2295,7 +2300,8 @@ function confirmarMergeSync(){
   });
   // Marca d'água avança só agora (triagem concluída): próximo sync parte desta data.
   db.pluggyLastSync=new Date().toISOString().slice(0,10);
-  var sfm=document.getElementById('sync-from');if(sfm)sfm.value=db.pluggyLastSync;
+  var sfm=document.getElementById('sync-from');if(sfm)sfm.value=syncFromDefault();
+  atualizarSyncHint();
   log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn});
   syncFaturas();salvar();render();
   fechar('ov-sync');

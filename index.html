@@ -452,6 +452,19 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-delcat">
+  <div class="mod">
+    <h3>Excluir categoria</h3>
+    <div id="delcat-msg" style="font-size:13px;color:#c7cbe0;margin-bottom:10px;line-height:1.4"></div>
+    <div id="delcat-reassign-wrap">
+      <label>Mover registros para</label>
+      <select id="delcat-target"></select>
+    </div>
+    <button class="sbtn" style="margin-top:14px;background:#f87171" onclick="confirmarDelCat()">Excluir categoria</button>
+    <button class="cbtn" onclick="fechar('ov-delcat')">Cancelar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-cof-detalhe">
   <div class="mod">
     <div id="cof-detalhe-content"></div>
@@ -528,7 +541,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v115';
+var APP_VERSION = 'v116';
 
 var currentUser = null;
 var accessToken = null;
@@ -3600,7 +3613,51 @@ function renderCats(){
   document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return '<span class="chip">'+c+'<button onclick="delCat(\'e\','+i+')">×</button></span>';}).join('');
 }
 function addCat(t){var inp=document.getElementById(t==='r'?'ncr':'nce');var v=inp.value.trim();if(!v)return;var arr=t==='r'?db.catsR:db.catsE;if(arr.indexOf(v)>=0){toast('Já existe');return;}arr.push(v);log('cat_add',{tipo:t,cat:v});inp.value='';salvar();renderCats();}
-function delCat(t,i){var cat=t==='r'?db.catsR[i]:db.catsE[i];if(t==='r')db.catsR.splice(i,1);else db.catsE.splice(i,1);log('cat_del',{tipo:t,cat:cat});salvar();renderCats();}
+// Conta registros que usam uma categoria (todos os meses, todas as fontes).
+// sub='fat' é excluído (cat fixa 'Cartão de Crédito', regerada por syncFaturas).
+function contarCatUso(t,cat){
+  var n=0;
+  db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===cat)n++;});
+  if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===cat)n++;});
+  db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===cat)n++;});
+  (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===cat)n++;});
+  return n;
+}
+var delCatCtx=null;
+function delCat(t,i){
+  var cat=t==='r'?db.catsR[i]:db.catsE[i];if(cat==null)return;
+  var afetados=contarCatUso(t,cat);
+  var outras=(t==='r'?db.catsR:db.catsE).filter(function(c){return c!==cat;});
+  if(afetados>0&&!outras.length){toast('Crie outra categoria antes de excluir esta.');return;}
+  delCatCtx={t:t,cat:cat};
+  var wrap=document.getElementById('delcat-reassign-wrap');
+  if(afetados===0){
+    document.getElementById('delcat-msg').textContent='Nenhum registro usa "'+cat+'". Excluir esta categoria?';
+    wrap.style.display='none';
+  }else{
+    document.getElementById('delcat-msg').textContent='"'+cat+'" é usada por '+afetados+' registro'+(afetados>1?'s':'')+' (todos os meses). Escolha para onde movê-los antes de excluir:';
+    wrap.style.display='block';
+    document.getElementById('delcat-target').innerHTML=outras.slice().sort().map(function(c){return '<option>'+escHtml(c)+'</option>';}).join('');
+  }
+  document.getElementById('ov-delcat').classList.add('on');
+}
+function confirmarDelCat(){
+  if(!delCatCtx)return;
+  var t=delCatCtx.t,cat=delCatCtx.cat;
+  var afetados=contarCatUso(t,cat),nova=null;
+  if(afetados>0){
+    nova=document.getElementById('delcat-target').value;
+    if(!nova){toast('Escolha a categoria de destino.');return;}
+    db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===cat)l.cat=nova;});
+    if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===cat)l.cat=nova;});
+    db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===cat)f.cat=nova;});
+    (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===cat)o.cat=nova;});
+  }
+  var arr=t==='r'?db.catsR:db.catsE;var idx=arr.indexOf(cat);if(idx>=0)arr.splice(idx,1);
+  log('cat_del',{tipo:t,cat:cat,afetados:afetados,movidoPara:nova});
+  delCatCtx=null;fechar('ov-delcat');salvar();
+  toast('Categoria excluída'+(afetados>0?' · '+afetados+' movido(s) para '+nova:''));render();
+}
 
 // ── BALANCE DASH ─────────────────────────────────────────
 function balanceDash(){

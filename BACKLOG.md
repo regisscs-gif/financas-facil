@@ -14,11 +14,8 @@ Novo gráfico no dashboard mostrando a evolução do gasto ao longo dos meses, q
 ### 2. Filtro por tipo de categoria ✅ (v114)
 Implementado como nova página **Revisar** (nav 🏷️): visão consolidada de conta (`lancs`) + cartão (`ccLancs`) do ciclo, com filtros por tipo (receita/despesa), categoria e origem (conta/cartão), e recategorização inline via `<select>` por linha (`recatRow`). Parcelas recategorizam a série inteira; cartão dispara `syncFaturas()`.
 
-### 3. Melhorar processo de exclusão de categoria
-Rever o fluxo de exclusão de categoria (`catsR`/`catsE`):
-- Alertar/tratar lançamentos que usam a categoria a ser excluída (reatribuir, bloquear ou marcar como "sem categoria").
-- Evitar categorias órfãs em `lancs`/`ccLancs` após a exclusão.
-- Confirmação clara antes de excluir.
+### 3. Melhorar processo de exclusão de categoria ✅ (v116)
+Fluxo de exclusão (`delCat`) agora abre modal `#ov-delcat`: mostra quantos registros usam a categoria (`contarCatUso` — lancs exceto `sub='fat'`, ccLancs, fixos, ocorrs override, todos os meses), **obriga reatribuir** para outra categoria do mesmo tipo antes de excluir (`confirmarDelCat` move tudo de uma vez), e confirma a ação. Sem registros afetados → confirmação simples. Não sobram órfãos. Se não houver outra categoria do tipo, bloqueia e pede para criar uma antes.
 
 ### 4. Melhorar apontamento de gastos fixos durante a sincronização
 Aprimorar a supressão/reconciliação de fixos no preview de sync do Pluggy (`mostrarPreviewSync`/`confirmarMergeSync`):

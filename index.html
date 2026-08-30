@@ -71,6 +71,11 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 .pb{height:100%;border-radius:99px}
 .chip{display:inline-flex;align-items:center;gap:5px;background:#22263a;border-radius:99px;padding:5px 10px;margin:3px;font-size:12px}
 .chip button{background:none;border:none;color:#7b80a0;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.catrow{display:flex;align-items:center;gap:10px;padding:13px 12px;background:#22263a;border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:14px}
+.catrow:active{background:#2a2f4a}
+.catrow .cr-emo{font-size:18px}
+.catrow .cr-name{flex:1;color:#e8eaf6}
+.catrow .cr-chev{color:#7b80a0;font-size:18px}
 .empty{text-align:center;color:#7b80a0;padding:28px;font-size:13px}
 .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#34d399;color:#000;padding:9px 20px;border-radius:10px;font-weight:700;font-size:13px;z-index:300;display:none;white-space:nowrap}
 .sec{font-size:11px;color:#7b80a0;padding:6px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
@@ -452,27 +457,29 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
-<div class="ov" id="ov-delcat">
-  <div class="mod">
-    <h3>Excluir categoria</h3>
-    <div id="delcat-msg" style="font-size:13px;color:#c7cbe0;margin-bottom:10px;line-height:1.4"></div>
-    <div id="delcat-reassign-wrap">
-      <label>Mover registros para</label>
-      <select id="delcat-target"></select>
-    </div>
-    <button class="sbtn" style="margin-top:14px;background:#f87171" onclick="confirmarDelCat()">Excluir categoria</button>
-    <button class="cbtn" onclick="fechar('ov-delcat')">Cancelar</button>
-  </div>
-</div>
-
 <div class="ov" id="ov-editcat">
   <div class="mod">
-    <h3>Renomear categoria</h3>
-    <label>Novo nome</label>
-    <input id="editcat-nome" placeholder="Nome da categoria">
-    <div id="editcat-hint" style="font-size:11px;color:#7b80a0;margin-top:6px;line-height:1.4"></div>
-    <button class="sbtn" style="margin-top:14px" onclick="confirmarEditCat()">Salvar</button>
-    <button class="cbtn" onclick="fechar('ov-editcat')">Cancelar</button>
+    <!-- Painel: editar/renomear -->
+    <div id="editcat-pane">
+      <h3>Editar categoria</h3>
+      <label>Nome</label>
+      <input id="editcat-nome" placeholder="Nome da categoria">
+      <div id="editcat-hint" style="font-size:11px;color:#7b80a0;margin-top:6px;line-height:1.4"></div>
+      <button class="sbtn" style="margin-top:14px" onclick="confirmarEditCat()">Salvar</button>
+      <button class="sbtn" style="margin-top:8px;background:#f87171;color:#fff" onclick="editcatIrExcluir()">🗑 Excluir categoria</button>
+      <button class="cbtn" onclick="fechar('ov-editcat')">Cancelar</button>
+    </div>
+    <!-- Painel: confirmar exclusão / reatribuir -->
+    <div id="delcat-pane" style="display:none">
+      <h3>Excluir categoria</h3>
+      <div id="delcat-msg" style="font-size:13px;color:#c7cbe0;margin-bottom:10px;line-height:1.4"></div>
+      <div id="delcat-reassign-wrap">
+        <label>Mover registros para</label>
+        <select id="delcat-target"></select>
+      </div>
+      <button class="sbtn" style="margin-top:14px;background:#f87171;color:#fff" onclick="confirmarDelCat()">Excluir definitivamente</button>
+      <button class="cbtn" onclick="editcatVoltar()">Voltar</button>
+    </div>
   </div>
 </div>
 
@@ -552,7 +559,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v117';
+var APP_VERSION = 'v118';
 
 var currentUser = null;
 var accessToken = null;
@@ -3620,8 +3627,9 @@ function renderProj(){
 }
 function renderCats(){
   db.catsR.sort();db.catsE.sort();
-  document.getElementById('cr').innerHTML=db.catsR.map(function(c,i){return '<span class="chip">'+escHtml(c)+'<button onclick="editCat(\'r\','+i+')" title="Renomear">✏️</button><button onclick="delCat(\'r\','+i+')" title="Excluir">×</button></span>';}).join('');
-  document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return '<span class="chip">'+escHtml(c)+'<button onclick="editCat(\'e\','+i+')" title="Renomear">✏️</button><button onclick="delCat(\'e\','+i+')" title="Excluir">×</button></span>';}).join('');
+  function catRow(t,c,i){return '<div class="catrow" onclick="editCat(\''+t+'\','+i+')"><span class="cr-emo">'+emo(c)+'</span><span class="cr-name">'+escHtml(c)+'</span><span class="cr-chev">›</span></div>';}
+  document.getElementById('cr').innerHTML=db.catsR.map(function(c,i){return catRow('r',c,i);}).join('')||'<div style="font-size:12px;color:#7b80a0">Nenhuma categoria.</div>';
+  document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return catRow('e',c,i);}).join('')||'<div style="font-size:12px;color:#7b80a0">Nenhuma categoria.</div>';
 }
 function addCat(t){var inp=document.getElementById(t==='r'?'ncr':'nce');var v=inp.value.trim();if(!v)return;var arr=t==='r'?db.catsR:db.catsE;if(arr.indexOf(v)>=0){toast('Já existe');return;}arr.push(v);log('cat_add',{tipo:t,cat:v});inp.value='';salvar();renderCats();}
 // Conta registros que usam uma categoria (todos os meses, todas as fontes).
@@ -3634,49 +3642,26 @@ function contarCatUso(t,cat){
   (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===cat)n++;});
   return n;
 }
-var delCatCtx=null;
-function delCat(t,i){
-  var cat=t==='r'?db.catsR[i]:db.catsE[i];if(cat==null)return;
-  var afetados=contarCatUso(t,cat);
-  var outras=(t==='r'?db.catsR:db.catsE).filter(function(c){return c!==cat;});
-  if(afetados>0&&!outras.length){toast('Crie outra categoria antes de excluir esta.');return;}
-  delCatCtx={t:t,cat:cat};
-  var wrap=document.getElementById('delcat-reassign-wrap');
-  if(afetados===0){
-    document.getElementById('delcat-msg').textContent='Nenhum registro usa "'+cat+'". Excluir esta categoria?';
-    wrap.style.display='none';
-  }else{
-    document.getElementById('delcat-msg').textContent='"'+cat+'" é usada por '+afetados+' registro'+(afetados>1?'s':'')+' (todos os meses). Escolha para onde movê-los antes de excluir:';
-    wrap.style.display='block';
-    document.getElementById('delcat-target').innerHTML=outras.slice().sort().map(function(c){return '<option>'+escHtml(c)+'</option>';}).join('');
-  }
-  document.getElementById('ov-delcat').classList.add('on');
-}
-function confirmarDelCat(){
-  if(!delCatCtx)return;
-  var t=delCatCtx.t,cat=delCatCtx.cat;
-  var afetados=contarCatUso(t,cat),nova=null;
-  if(afetados>0){
-    nova=document.getElementById('delcat-target').value;
-    if(!nova){toast('Escolha a categoria de destino.');return;}
-    db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===cat)l.cat=nova;});
-    if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===cat)l.cat=nova;});
-    db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===cat)f.cat=nova;});
-    (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===cat)o.cat=nova;});
-  }
-  var arr=t==='r'?db.catsR:db.catsE;var idx=arr.indexOf(cat);if(idx>=0)arr.splice(idx,1);
-  log('cat_del',{tipo:t,cat:cat,afetados:afetados,movidoPara:nova});
-  delCatCtx=null;fechar('ov-delcat');salvar();
-  toast('Categoria excluída'+(afetados>0?' · '+afetados+' movido(s) para '+nova:''));render();
-}
 var editCatCtx=null;
+// Reescreve a categoria (antigo→novo) em todos os registros de todas as fontes/meses.
+function reescreverCat(t,antigo,novo){
+  db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===antigo)l.cat=novo;});
+  if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===antigo)l.cat=novo;});
+  db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===antigo)f.cat=novo;});
+  (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===antigo)o.cat=novo;});
+}
 function editCat(t,i){
   var cat=t==='r'?db.catsR[i]:db.catsE[i];if(cat==null)return;
   editCatCtx={t:t,cat:cat};
+  editcatVoltar(); // garante painel de edição visível
   document.getElementById('editcat-nome').value=cat;
   var n=contarCatUso(t,cat);
-  document.getElementById('editcat-hint').textContent=n>0?('O novo nome será aplicado a '+n+' registro'+(n>1?'s':'')+' (todos os meses).'):'Nenhum registro usa esta categoria ainda.';
+  document.getElementById('editcat-hint').textContent=n>0?('Usada por '+n+' registro'+(n>1?'s':'')+' — renomear aplica a todos (todos os meses).'):'Nenhum registro usa esta categoria ainda.';
   document.getElementById('ov-editcat').classList.add('on');
+}
+function editcatVoltar(){
+  document.getElementById('editcat-pane').style.display='block';
+  document.getElementById('delcat-pane').style.display='none';
 }
 function confirmarEditCat(){
   if(!editCatCtx)return;
@@ -3688,12 +3673,42 @@ function confirmarEditCat(){
   if(arr.indexOf(novo)>=0){toast('Já existe uma categoria com esse nome.');return;}
   var idx=arr.indexOf(antigo);if(idx<0){fechar('ov-editcat');return;}
   arr[idx]=novo;
-  db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===antigo)l.cat=novo;});
-  if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===antigo)l.cat=novo;});
-  db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===antigo)f.cat=novo;});
-  (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===antigo)o.cat=novo;});
+  reescreverCat(t,antigo,novo);
   log('cat_rename',{tipo:t,de:antigo,para:novo});
   editCatCtx=null;fechar('ov-editcat');salvar();toast('✓ Categoria renomeada');render();
+}
+// Alterna o modal para o painel de exclusão (com reatribuição obrigatória)
+function editcatIrExcluir(){
+  if(!editCatCtx)return;
+  var t=editCatCtx.t,cat=editCatCtx.cat;
+  var afetados=contarCatUso(t,cat);
+  var outras=(t==='r'?db.catsR:db.catsE).filter(function(c){return c!==cat;});
+  if(afetados>0&&!outras.length){toast('Crie outra categoria antes de excluir esta.');return;}
+  var wrap=document.getElementById('delcat-reassign-wrap');
+  if(afetados===0){
+    document.getElementById('delcat-msg').textContent='Nenhum registro usa "'+cat+'". Excluir esta categoria?';
+    wrap.style.display='none';
+  }else{
+    document.getElementById('delcat-msg').textContent='"'+cat+'" é usada por '+afetados+' registro'+(afetados>1?'s':'')+' (todos os meses). Escolha para onde movê-los antes de excluir:';
+    wrap.style.display='block';
+    document.getElementById('delcat-target').innerHTML=outras.slice().sort().map(function(c){return '<option>'+escHtml(c)+'</option>';}).join('');
+  }
+  document.getElementById('editcat-pane').style.display='none';
+  document.getElementById('delcat-pane').style.display='block';
+}
+function confirmarDelCat(){
+  if(!editCatCtx)return;
+  var t=editCatCtx.t,cat=editCatCtx.cat;
+  var afetados=contarCatUso(t,cat),nova=null;
+  if(afetados>0){
+    nova=document.getElementById('delcat-target').value;
+    if(!nova){toast('Escolha a categoria de destino.');return;}
+    reescreverCat(t,cat,nova);
+  }
+  var arr=t==='r'?db.catsR:db.catsE;var idx=arr.indexOf(cat);if(idx>=0)arr.splice(idx,1);
+  log('cat_del',{tipo:t,cat:cat,afetados:afetados,movidoPara:nova});
+  editCatCtx=null;fechar('ov-editcat');salvar();
+  toast('Categoria excluída'+(afetados>0?' · '+afetados+' movido(s) para '+nova:''));render();
 }
 
 // ── BALANCE DASH ─────────────────────────────────────────

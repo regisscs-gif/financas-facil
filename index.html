@@ -94,6 +94,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
 /* ── DESKTOP ──────────────────────────────────────────────── */
 @media(min-width:768px){
   body{max-width:100%;padding-bottom:0}
+  #evo-content svg{max-width:560px;margin:0 auto}
   #login-screen{max-width:430px;margin:0 auto}
   #app-screen{margin-left:200px}
   .hdr{position:sticky;top:0;background:#0f1117;z-index:30;border-bottom:1px solid #2a2f4a}
@@ -564,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v120';
+var APP_VERSION = 'v121';
 
 var currentUser = null;
 var accessToken = null;

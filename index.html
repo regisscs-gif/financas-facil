@@ -180,6 +180,11 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <div id="fix-list"></div>
   </div>
   <div class="page" id="pg-parc"><div id="p-list"></div></div>
+  <div class="page" id="pg-rev">
+    <div class="info-box" style="margin-bottom:10px">🏷️ Visão consolidada de conta + cartão do ciclo. Troque a categoria direto na linha.</div>
+    <div id="rev-filtros"></div>
+    <div id="rev-list"></div>
+  </div>
   <div class="page" id="pg-cc">
     <div id="cc-list"></div>
     <div id="cc-fatura-wrap" style="display:none">
@@ -281,6 +286,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <button class="nb" data-pg="fix"><span>🔁</span>Fixos</button>
     <button class="nb" data-pg="parc"><span>💳</span>Parc.</button>
     <button class="nb" data-pg="cc"><span>🃏</span>CC</button>
+    <button class="nb" data-pg="rev"><span>🏷️</span>Revisar</button>
     <button class="nb" data-pg="cfg"><span>⚙️</span>Config.</button>
   </nav>
 </div>
@@ -522,7 +528,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v113';
+var APP_VERSION = 'v114';
 
 var currentUser = null;
 var accessToken = null;
@@ -2946,7 +2952,7 @@ function itemFixoMesHTML(f,mk){
 
 function render(){
   document.getElementById('mlabel').textContent = getCicloLabel(curM, curY);
-  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();
+  renderDash();renderLancs();renderFixos();renderParc();renderCCs();renderProj();renderCofrinhos();renderRevisar();
   balanceDash();
 }
 function varTag(cur,prev,inv){
@@ -3029,6 +3035,86 @@ function renderLancs(){
     h+='</div>';
   }else h+='<div class="empty">Sem lançamentos'+(lancFiltroConta!=null?' nesta conta':' neste mês')+'.</div>';
   document.getElementById('l-list').innerHTML=h;
+}
+// ── REVISAR (recategorização consolidada conta + cartão) ──
+var revFTipo='all'; // 'all' | 'r' | 'e'
+var revFCat='';     // '' = todas | nome da categoria
+var revFOrig='all'; // 'all' | 'conta' | 'cc'
+function cartaoNome(id){var c=(db.cartoes||[]).find(function(x){return x.id===id;});return c?c.nome:'Cartão';}
+function revCatOpts(tipo,sel){
+  var arr=tipo==='r'?db.catsR:tipo==='e'?db.catsE:Array.from(new Set((db.catsR||[]).concat(db.catsE||[])));
+  return (arr||[]).slice().sort().map(function(c){return '<option'+(c===sel?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+}
+function setRevTipo(v){revFTipo=v;revFCat='';renderRevisar();}
+function setRevCat(v){revFCat=v;renderRevisar();}
+function setRevOrig(v){revFOrig=v;renderRevisar();}
+function renderRevisar(){
+  // Fonte: lancs do ciclo (exceto sub='fat') + ccLancs do ciclo
+  var rows=[];
+  db.lancs.forEach(function(l){if(l.sub==='fat')return;if(!pertenceCiclo(l.data,curM,curY))return;rows.push({origem:'lanc',l:l,tipo:l.tipo});});
+  (db.ccLancs||[]).forEach(function(l){if(!pertenceCiclo(l.data,curM,curY))return;rows.push({origem:'cc',l:l,tipo:'e'});});
+  // Filtros
+  var list=rows.filter(function(r){
+    if(revFTipo!=='all'&&r.tipo!==revFTipo)return false;
+    if(revFOrig==='conta'&&r.origem!=='lanc')return false;
+    if(revFOrig==='cc'&&r.origem!=='cc')return false;
+    if(revFCat&&r.l.cat!==revFCat)return false;
+    return true;
+  }).sort(function(a,b){return b.l.data.localeCompare(a.l.data);});
+  // Barra de filtros
+  var selSt='font-size:11px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:6px;color:#e8eaf6;padding:4px 6px';
+  var f='<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    +'<select onchange="setRevTipo(this.value)" style="'+selSt+'">'
+      +'<option value="all"'+(revFTipo==='all'?' selected':'')+'>Todos os tipos</option>'
+      +'<option value="r"'+(revFTipo==='r'?' selected':'')+'>↑ Receitas</option>'
+      +'<option value="e"'+(revFTipo==='e'?' selected':'')+'>↓ Despesas</option>'
+    +'</select>'
+    +'<select onchange="setRevCat(this.value)" style="'+selSt+'">'
+      +'<option value=""'+(revFCat===''?' selected':'')+'>Todas as categorias</option>'
+      +revCatOpts(revFTipo,revFCat)
+    +'</select>'
+    +'<select onchange="setRevOrig(this.value)" style="'+selSt+'">'
+      +'<option value="all"'+(revFOrig==='all'?' selected':'')+'>Conta e cartão</option>'
+      +'<option value="conta"'+(revFOrig==='conta'?' selected':'')+'>🏦 Conta</option>'
+      +'<option value="cc"'+(revFOrig==='cc'?' selected':'')+'>💳 Cartão</option>'
+    +'</select>'
+    +'<span style="font-size:11px;color:#7b80a0;margin-left:auto">'+list.length+' registro'+(list.length===1?'':'s')+'</span>'
+  +'</div>';
+  document.getElementById('rev-filtros').innerHTML=f;
+  // Lista
+  var h='';
+  if(!list.length){h='<div class="empty">Nenhum registro com esses filtros.</div>';}
+  else{
+    h='<div class="card">'+list.map(function(r){
+      var l=r.l,isR=r.tipo==='r',p=l.data.split('-');
+      var orig=r.origem==='cc'
+        ? '💳 '+escHtml(cartaoNome(l.ccId))+(l.titular==='fam'?' <span class="tag" style="background:rgba(250,204,21,.15);color:#facc15;font-size:9px">Família</span>':'')
+        : (l.contaId?'🏦 '+escHtml(contaNome(l.contaId)):'🏦 Sem conta');
+      var tag=l.sub==='pa'?'<span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';
+      var sel='<select onchange="recatRow(\''+r.origem+'\','+l.id+',this.value)" style="flex-shrink:0;max-width:130px;font-size:10px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:6px;color:#e8eaf6;padding:3px 5px">'+revCatOpts(r.tipo,l.cat)+'</select>';
+      return '<div class="it"><div class="ico" style="background:'+(isR?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)')+'">'+emo(l.cat)+'</div>'
+        +'<div class="iinfo"><div class="iname">'+escHtml(l.desc)+tag+'</div><div class="isub">'+orig+' · '+p[2]+'/'+p[1]+'</div></div>'
+        +'<div class="ival" style="color:'+(isR?'#34d399':'#f87171')+';margin-right:6px">'+(isR?'+':'-')+fmt(l.val)+'</div>'
+        +sel+'</div>';
+    }).join('')+'</div>';
+  }
+  document.getElementById('rev-list').innerHTML=h;
+}
+function recatRow(origem,id,novaCat){
+  if(origem==='lanc'){
+    var alvo=db.lancs.find(function(x){return x.id===id;});if(!alvo)return;
+    if(alvo.sub==='pa'&&alvo.pid!=null){db.lancs.forEach(function(x){if(x.sub==='pa'&&x.pid===alvo.pid)x.cat=novaCat;});}
+    else alvo.cat=novaCat;
+    log('recat',{origem:origem,id:id,cat:novaCat,serie:alvo.sub==='pa'});
+    salvar();
+  }else{
+    var alvc=(db.ccLancs||[]).find(function(x){return x.id===id;});if(!alvc)return;
+    if(alvc.sub==='pa'&&alvc.pid!=null){db.ccLancs.forEach(function(x){if(x.sub==='pa'&&x.pid===alvc.pid)x.cat=novaCat;});}
+    else alvc.cat=novaCat;
+    log('recat',{origem:origem,id:id,cat:novaCat,serie:alvc.sub==='pa'});
+    syncFaturas();salvar();
+  }
+  toast('✓ Categoria atualizada');render();
 }
 function renderFixos(){
   var el=document.getElementById('fix-list');

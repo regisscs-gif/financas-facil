@@ -153,6 +153,10 @@ Idempotent repair functions run in `init()` after `carregarDados()`, each guarde
 
 When changing reconciliation logic that should re-apply to existing data, introduce a **new** flag (e.g. `migReconcParc2` → `migReconcParc3`).
 
+### Revisar (recategorização consolidada, v114)
+
+Page `pg-rev` (nav 🏷️ "Revisar", `renderRevisar()`). Unifies account (`db.lancs`, excluding `sub='fat'` aggregates) and card (`db.ccLancs`) transactions of the current cycle (`pertenceCiclo`) into one flat list, with filters by **tipo** (receita/despesa — the "filtro por tipo de categoria"), **categoria**, and **origem** (conta/cartão). Each row has an inline category `<select>` → `recatRow(origem,id,novaCat)`: writes `cat` back to the right array; for `sub='pa'` it recategorizes the **whole series** (all rows sharing `pid`); card edits call `syncFaturas()` before `salvar()`. Read-only aggregation view — no create/delete here.
+
 ### Cofrinhos (savings jars)
 
 Saldo is always computed: `cofSaldo(cofId)` sums `cofrinhoMovs` for that jar — never stored directly.

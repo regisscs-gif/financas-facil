@@ -564,7 +564,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v119';
+var APP_VERSION = 'v120';
 
 var currentUser = null;
 var accessToken = null;
@@ -3222,20 +3222,29 @@ function renderEvolucao(){
     +'</select>'
     +'<span style="font-size:11px;color:#7b80a0;margin-left:auto">Média 12m: <b style="color:'+cor+'">'+fmt(media)+'</b></span>'
   +'</div>';
-  // Gráfico de barras (12 colunas, clicáveis)
+  // Gráfico de linha (12 pontos clicáveis) — SVG responsivo
   function fmtK(v){var a=Math.abs(v);return a>=1000?(a/1000).toFixed(a>=10000?0:1).replace(/\.0$/,'')+'k':Math.round(a).toString();}
-  var barras=porMes.map(function(d){
-    var sel=d.mk===evoMesSel,pct=Math.round((d.total/maxV)*100);
+  var W=340,H=176,padL=14,padR=14,padT=26,padB=20;
+  var plotW=W-padL-padR,plotH=H-padT-padB,n=porMes.length,colW=plotW/n;
+  function xAt(i){return padL+(n<=1?plotW/2:plotW*i/(n-1));}
+  function yAt(v){return padT+plotH*(1-(v/maxV));}
+  var linePts=porMes.map(function(d,i){return xAt(i).toFixed(1)+','+yAt(d.total).toFixed(1);}).join(' ');
+  var areaPts=xAt(0).toFixed(1)+','+(padT+plotH)+' '+linePts+' '+xAt(n-1).toFixed(1)+','+(padT+plotH);
+  var yMedia=yAt(media).toFixed(1);
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block;overflow:visible">';
+  svg+='<line x1="'+padL+'" y1="'+yMedia+'" x2="'+(W-padR)+'" y2="'+yMedia+'" stroke="#7b80a0" stroke-width="1" stroke-dasharray="3 3" opacity=".45"/>';
+  svg+='<polygon points="'+areaPts+'" fill="'+corFraca+'" opacity=".22"/>';
+  svg+='<polyline points="'+linePts+'" fill="none" stroke="'+cor+'" stroke-width="2" stroke-linejoin="round"/>';
+  porMes.forEach(function(d,i){
+    var x=xAt(i),y=yAt(d.total),sel=d.mk===evoMesSel;
     var lbl=MABR[d.m]+(d.y!==curY?('/'+String(d.y).slice(2)):'');
-    return '<div onclick="setEvoMes(\''+d.mk+'\')" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer">'
-      +'<div style="font-size:8px;color:'+(sel?cor:'#7b80a0')+';font-weight:'+(sel?700:400)+';white-space:nowrap">'+(d.total>0?fmtK(d.total):'')+'</div>'
-      +'<div style="width:100%;height:120px;display:flex;align-items:flex-end;padding:0 1px">'
-        +'<div style="width:100%;height:'+pct+'%;min-height:'+(d.total>0?3:0)+'px;background:'+(sel?cor:corFraca)+';border-radius:4px 4px 0 0;transition:height .2s"></div>'
-      +'</div>'
-      +'<div style="font-size:8px;color:'+(sel?'#e8eaf6':'#7b80a0')+';font-weight:'+(sel?700:400)+';white-space:nowrap">'+lbl+'</div>'
-    +'</div>';
-  }).join('');
-  h+='<div class="card"><div style="display:flex;align-items:flex-end;gap:2px">'+barras+'</div></div>';
+    svg+='<text x="'+x.toFixed(1)+'" y="'+(y-9).toFixed(1)+'" text-anchor="middle" font-size="'+(sel?9:8)+'" font-weight="'+(sel?700:400)+'" fill="'+(sel?cor:'#9aa0c0')+'">'+(d.total>0?fmtK(d.total):'')+'</text>';
+    svg+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(sel?5:3.5)+'" fill="'+cor+'"'+(sel?' stroke="#fff" stroke-width="1.5"':'')+'/>';
+    svg+='<text x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="8" font-weight="'+(sel?700:400)+'" fill="'+(sel?'#e8eaf6':'#7b80a0')+'">'+lbl+'</text>';
+  });
+  porMes.forEach(function(d,i){var x=xAt(i);svg+='<rect x="'+(x-colW/2).toFixed(1)+'" y="0" width="'+colW.toFixed(1)+'" height="'+H+'" fill="transparent" style="cursor:pointer" onclick="setEvoMes(\''+d.mk+'\')"/>';});
+  svg+='</svg>';
+  h+='<div class="card">'+svg+'</div>';
   // Drill-down do mês selecionado
   var selData=porMes.find(function(d){return d.mk===evoMesSel;});
   var pm=selData.mk.split('-');

@@ -528,7 +528,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v114';
+var APP_VERSION = 'v115';
 
 var currentUser = null;
 var accessToken = null;
@@ -3043,7 +3043,18 @@ var revFOrig='all'; // 'all' | 'conta' | 'cc'
 function cartaoNome(id){var c=(db.cartoes||[]).find(function(x){return x.id===id;});return c?c.nome:'Cartão';}
 function revCatOpts(tipo,sel){
   var arr=tipo==='r'?db.catsR:tipo==='e'?db.catsE:Array.from(new Set((db.catsR||[]).concat(db.catsE||[])));
-  return (arr||[]).slice().sort().map(function(c){return '<option'+(c===sel?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+  arr=(arr||[]).slice().sort();
+  var out=arr.map(function(c){return '<option value="'+escHtml(c)+'"'+(c===sel?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+  // categoria removida da lista mas ainda usada por este registro: mantém visível
+  if(sel&&arr.indexOf(sel)<0)out='<option value="'+escHtml(sel)+'" selected>'+escHtml(sel)+' (removida)</option>'+out;
+  return out;
+}
+// Opções do filtro de categoria: oficiais + órfãs (removidas mas ainda presentes no ciclo)
+function revFiltroCatOpts(tipo,orfas,sel){
+  var arr=tipo==='r'?db.catsR:tipo==='e'?db.catsE:Array.from(new Set((db.catsR||[]).concat(db.catsE||[])));
+  var out=(arr||[]).slice().sort().map(function(c){return '<option value="'+escHtml(c)+'"'+(c===sel?' selected':'')+'>'+escHtml(c)+'</option>';}).join('');
+  Object.keys(orfas).sort().forEach(function(c){out+='<option value="'+escHtml(c)+'"'+(c===sel?' selected':'')+'>'+escHtml(c)+' (removida)</option>';});
+  return out;
 }
 function setRevTipo(v){revFTipo=v;revFCat='';renderRevisar();}
 function setRevCat(v){revFCat=v;renderRevisar();}
@@ -3061,6 +3072,12 @@ function renderRevisar(){
     if(revFCat&&r.l.cat!==revFCat)return false;
     return true;
   }).sort(function(a,b){return b.l.data.localeCompare(a.l.data);});
+  // Categorias órfãs (removidas da lista mas ainda usadas no ciclo), respeitando o tipo filtrado
+  var orfas={};
+  rows.forEach(function(r){
+    var oficial=r.tipo==='r'?(db.catsR||[]):(db.catsE||[]);
+    if(oficial.indexOf(r.l.cat)<0&&(revFTipo==='all'||revFTipo===r.tipo))orfas[r.l.cat]=true;
+  });
   // Barra de filtros
   var selSt='font-size:11px;background:#1a1d27;border:1px solid #3a3f5c;border-radius:6px;color:#e8eaf6;padding:4px 6px';
   var f='<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
@@ -3071,7 +3088,7 @@ function renderRevisar(){
     +'</select>'
     +'<select onchange="setRevCat(this.value)" style="'+selSt+'">'
       +'<option value=""'+(revFCat===''?' selected':'')+'>Todas as categorias</option>'
-      +revCatOpts(revFTipo,revFCat)
+      +revFiltroCatOpts(revFTipo,orfas,revFCat)
     +'</select>'
     +'<select onchange="setRevOrig(this.value)" style="'+selSt+'">'
       +'<option value="all"'+(revFOrig==='all'?' selected':'')+'>Conta e cartão</option>'

@@ -465,6 +465,17 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
   </div>
 </div>
 
+<div class="ov" id="ov-editcat">
+  <div class="mod">
+    <h3>Renomear categoria</h3>
+    <label>Novo nome</label>
+    <input id="editcat-nome" placeholder="Nome da categoria">
+    <div id="editcat-hint" style="font-size:11px;color:#7b80a0;margin-top:6px;line-height:1.4"></div>
+    <button class="sbtn" style="margin-top:14px" onclick="confirmarEditCat()">Salvar</button>
+    <button class="cbtn" onclick="fechar('ov-editcat')">Cancelar</button>
+  </div>
+</div>
+
 <div class="ov" id="ov-cof-detalhe">
   <div class="mod">
     <div id="cof-detalhe-content"></div>
@@ -541,7 +552,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v116';
+var APP_VERSION = 'v117';
 
 var currentUser = null;
 var accessToken = null;
@@ -3609,8 +3620,8 @@ function renderProj(){
 }
 function renderCats(){
   db.catsR.sort();db.catsE.sort();
-  document.getElementById('cr').innerHTML=db.catsR.map(function(c,i){return '<span class="chip">'+c+'<button onclick="delCat(\'r\','+i+')">×</button></span>';}).join('');
-  document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return '<span class="chip">'+c+'<button onclick="delCat(\'e\','+i+')">×</button></span>';}).join('');
+  document.getElementById('cr').innerHTML=db.catsR.map(function(c,i){return '<span class="chip">'+escHtml(c)+'<button onclick="editCat(\'r\','+i+')" title="Renomear">✏️</button><button onclick="delCat(\'r\','+i+')" title="Excluir">×</button></span>';}).join('');
+  document.getElementById('ce').innerHTML=db.catsE.map(function(c,i){return '<span class="chip">'+escHtml(c)+'<button onclick="editCat(\'e\','+i+')" title="Renomear">✏️</button><button onclick="delCat(\'e\','+i+')" title="Excluir">×</button></span>';}).join('');
 }
 function addCat(t){var inp=document.getElementById(t==='r'?'ncr':'nce');var v=inp.value.trim();if(!v)return;var arr=t==='r'?db.catsR:db.catsE;if(arr.indexOf(v)>=0){toast('Já existe');return;}arr.push(v);log('cat_add',{tipo:t,cat:v});inp.value='';salvar();renderCats();}
 // Conta registros que usam uma categoria (todos os meses, todas as fontes).
@@ -3657,6 +3668,32 @@ function confirmarDelCat(){
   log('cat_del',{tipo:t,cat:cat,afetados:afetados,movidoPara:nova});
   delCatCtx=null;fechar('ov-delcat');salvar();
   toast('Categoria excluída'+(afetados>0?' · '+afetados+' movido(s) para '+nova:''));render();
+}
+var editCatCtx=null;
+function editCat(t,i){
+  var cat=t==='r'?db.catsR[i]:db.catsE[i];if(cat==null)return;
+  editCatCtx={t:t,cat:cat};
+  document.getElementById('editcat-nome').value=cat;
+  var n=contarCatUso(t,cat);
+  document.getElementById('editcat-hint').textContent=n>0?('O novo nome será aplicado a '+n+' registro'+(n>1?'s':'')+' (todos os meses).'):'Nenhum registro usa esta categoria ainda.';
+  document.getElementById('ov-editcat').classList.add('on');
+}
+function confirmarEditCat(){
+  if(!editCatCtx)return;
+  var t=editCatCtx.t,antigo=editCatCtx.cat;
+  var novo=document.getElementById('editcat-nome').value.trim();
+  if(!novo){toast('Informe o nome');return;}
+  if(novo===antigo){fechar('ov-editcat');return;}
+  var arr=t==='r'?db.catsR:db.catsE;
+  if(arr.indexOf(novo)>=0){toast('Já existe uma categoria com esse nome.');return;}
+  var idx=arr.indexOf(antigo);if(idx<0){fechar('ov-editcat');return;}
+  arr[idx]=novo;
+  db.lancs.forEach(function(l){if(l.sub!=='fat'&&l.tipo===t&&l.cat===antigo)l.cat=novo;});
+  if(t==='e')(db.ccLancs||[]).forEach(function(l){if(l.cat===antigo)l.cat=novo;});
+  db.fixos.forEach(function(f){if(f.tipo===t&&f.cat===antigo)f.cat=novo;});
+  (db.ocorrs||[]).forEach(function(o){if(!o.deleted&&o.tipo===t&&o.cat===antigo)o.cat=novo;});
+  log('cat_rename',{tipo:t,de:antigo,para:novo});
+  editCatCtx=null;fechar('ov-editcat');salvar();toast('✓ Categoria renomeada');render();
 }
 
 // ── BALANCE DASH ─────────────────────────────────────────

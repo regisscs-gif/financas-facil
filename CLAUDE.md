@@ -153,6 +153,10 @@ Idempotent repair functions run in `init()` after `carregarDados()`, each guarde
 
 When changing reconciliation logic that should re-apply to existing data, introduce a **new** flag (e.g. `migReconcParc2` → `migReconcParc3`).
 
+### Evolução (12 meses, com drill-down, v119)
+
+Page `pg-evo` (nav 📈 "Evol.", `renderEvolucao()`). Bar chart of the last 12 financial cycles ending at `curM/curY` (window recomputed from the header month nav; `evoMesSel` clamps to the newest cycle if it falls outside). Filters: **tipo** (Despesa/Receita, `evoTipo`) and **categoria** (`evoCat`, includes orphans via `revFiltroCatOpts`). `evoRegistros(m,y,t)` is the per-cycle source — `db.lancs` (except `sub='fat'`) + `db.ccLancs` (`titular==='eu'`, expense only) matched by `pertenceCiclo` — so no double-count and card 'fam' excluded (invariants 1 & 8). Bars are hand-built `<div>`s (no chart lib), clickable → `setEvoMes(mk)`. Below the chart, a **drill-down** lists the individual lançamentos composing the selected month (desc, cat, origin 🏦/💳, date, value) — not just the total — plus a 12-month average. FAB hidden on this page.
+
 ### Revisar (recategorização consolidada, v114)
 
 Page `pg-rev` (nav 🏷️ "Revisar", `renderRevisar()`). Unifies account (`db.lancs`, excluding `sub='fat'` aggregates) and card (`db.ccLancs`) transactions of the current cycle (`pertenceCiclo`) into one flat list, with filters by **tipo** (receita/despesa — the "filtro por tipo de categoria"), **categoria**, and **origem** (conta/cartão). Each row has an inline category `<select>` → `recatRow(origem,id,novaCat)`: writes `cat` back to the right array; for `sub='pa'` it recategorizes the **whole series** (all rows sharing `pid`); card edits call `syncFaturas()` before `salvar()`. Read-only aggregation view — no create/delete here.

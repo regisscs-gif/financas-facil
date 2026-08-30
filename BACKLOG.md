@@ -4,12 +4,8 @@ Ideias e melhorias planejadas, ainda não implementadas. Ao concluir um item, re
 
 ## Funcionalidades
 
-### 1. Gráfico de evolução de custo mês a mês por categoria
-Novo gráfico no dashboard mostrando a evolução do gasto ao longo dos meses, quebrado por categoria.
-- Eixo X: meses (últimos N ciclos financeiros).
-- Uma série/linha por categoria de despesa (ou barras empilhadas).
-- Respeitar o ciclo financeiro configurado (`lancsDoMes()` é cycle-aware) e o filtro `titular==='eu'` para gastos de cartão.
-- Permitir escolher quantos meses exibir.
+### 1. Gráfico de evolução de custo mês a mês por categoria ✅ (v119)
+Implementado como nova página **Evolução** (nav 📈): gráfico de barras dos últimos 12 ciclos financeiros, com filtro por tipo (Despesa/Receita) e categoria (incluindo órfãs), média 12m, e **drill-down** — tocar um mês lista os lançamentos individuais daquele mês (conta + cartão), não só o total. Respeita `pertenceCiclo`, exclui `sub='fat'` e filtra `titular='eu'` (sem dupla contagem). `renderEvolucao`/`evoRegistros`.
 
 ### 2. Filtro por tipo de categoria ✅ (v114)
 Implementado como nova página **Revisar** (nav 🏷️): visão consolidada de conta (`lancs`) + cartão (`ccLancs`) do ciclo, com filtros por tipo (receita/despesa), categoria e origem (conta/cartão), e recategorização inline via `<select>` por linha (`recatRow`). Parcelas recategorizam a série inteira; cartão dispara `syncFaturas()`.

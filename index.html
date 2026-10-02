@@ -565,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v123';
+var APP_VERSION = 'v124';
 
 var currentUser = null;
 var accessToken = null;
@@ -1761,11 +1761,16 @@ function renderConfDiff(){
     h+='<div style="margin:10px 0 6px;font-size:12px;font-weight:700;color:#f87171">⬆ No site, não está na fatura ('+sobrando.length+')</div>';
     sobrando.forEach(function(l){
       var dp=l.data.split('-');var pt=l.sub==='pa'?' <span class="tag tprc">'+l.pn+'/'+l.pt+'</span>':'';var tf=l.titular==='fam'?' 👥':'';
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#22263a;border-radius:8px;margin-bottom:5px">'
-        +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(l.desc)+pt+tf+'</div><div style="font-size:10px;color:#7b80a0">'+escHtml(l.cat||'')+' · '+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
-        +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(l.val)+'</div>'
-        +'<button onclick="confDelSobrando('+l.id+')" style="background:rgba(248,113,113,.2);color:#f87171;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">Remover</button>'
-        +'</div>';
+      h+='<div style="background:#22263a;border-radius:8px;margin-bottom:5px;padding:6px 8px">'
+        +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<div style="flex:1;min-width:0"><div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(l.desc)+pt+tf+'</div><div style="font-size:10px;color:#7b80a0">'+escHtml(l.cat||'')+' · '+dp[2]+' '+MABR[+dp[1]-1]+'</div></div>'
+          +'<div style="font-size:13px;font-weight:700;color:#f87171">-'+fmt(l.val)+'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:5px">'
+          +'<button onclick="confMoverProx('+l.id+')" style="background:rgba(129,140,248,.2);color:#a5b4fc;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">→ Próxima fatura</button>'
+          +'<button onclick="confDelSobrando('+l.id+')" style="background:rgba(248,113,113,.2);color:#f87171;border:1px solid #3a3f5c;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:600">Remover</button>'
+        +'</div>'
+      +'</div>';
     });
   }
   document.getElementById('conf-fatura-content').innerHTML=h;
@@ -1784,6 +1789,16 @@ function confDelSobrando(id){
   db.ccLancs=db.ccLancs.filter(function(x){return x.id!==id;});
   log('conf_del',{id:id});
   syncFaturas();salvar();renderConfDiff();renderFatura(curCCId);
+}
+// Move o lançamento para a próxima fatura (não apaga): fatMk = mês seguinte ao conferido.
+// Só a parcela em questão é movida; demais parcelas da série ficam intactas.
+function confMoverProx(id){
+  var l=db.ccLancs.find(function(x){return x.id===id;});if(!l)return;
+  var nm=curM+1,ny=curY;if(nm>11){nm=0;ny++;}
+  l.fatMk=mesKey(nm,ny);
+  log('conf_mover',{id:id,fatMk:l.fatMk});
+  syncFaturas();salvar();renderConfDiff();renderFatura(curCCId);
+  toast('Movido para a fatura de '+MESES[nm]+'/'+ny);
 }
 function autoCatExtrato(desc,tipo){
   var d=desc.toUpperCase();

@@ -565,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v121';
+var APP_VERSION = 'v122';
 
 var currentUser = null;
 var accessToken = null;
@@ -1708,6 +1708,22 @@ function renderConfDiff(){
     }
     faltando.push(it);
   });
+  // 3º passe: itens NÃO-parcela restantes casam por VALOR (data como desempate). A descrição
+  // do banco no PDF diverge da importada (ex.: prefixo de referência "43441386Gabrielle" vs
+  // "GABRIELLE"); como valor+cartão+fatura já batem, é a mesma compra — evita aparecer nos 2 lados.
+  var faltando2=[];
+  faltando.forEach(function(it){
+    if(!it.isParcela){
+      var vc=Math.round(Math.abs(it.val)*100),best=-1,bestDiff=Infinity;
+      for(var j=0;j<sobrando.length;j++){var l=sobrando[j];
+        if(l.sub==='pa'||Math.round(Math.abs(l.val)*100)!==vc)continue;
+        var diff=Math.abs(new Date(l.data)-new Date(it.data));
+        if(diff<bestDiff){bestDiff=diff;best=j;}}
+      if(best>=0){sobrando.splice(best,1);return;}
+    }
+    faltando2.push(it);
+  });
+  faltando=faltando2;
   confLastFalt=faltando;
   var totFat=confFatItems.reduce(function(s,it){return s+Math.abs(it.val);},0);
   var totSite=site.reduce(function(s,l){return s+Math.abs(l.val);},0);

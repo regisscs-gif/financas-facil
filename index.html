@@ -565,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v124';
+var APP_VERSION = 'v125';
 
 var currentUser = null;
 var accessToken = null;
@@ -853,6 +853,15 @@ function pertenceCiclo(dataStr, m, y) {
   var iniStr = c.ini.getFullYear()+'-'+pad(c.ini.getMonth()+1)+'-'+pad(c.ini.getDate());
   var fimStr = c.fim.getFullYear()+'-'+pad(c.fim.getMonth()+1)+'-'+pad(c.fim.getDate());
   return dataStr >= iniStr && dataStr <= fimStr;
+}
+// mesKey do CICLO a que uma data pertence (não o mês-calendário cru). Ex.: no ciclo custom
+// dia 25, um débito de 25/09 pertence ao ciclo de Outubro → "2026-10". Usado na supressão de
+// fixos, que deve casar com o mês em que o fixo é exibido (fixosVigentes(curM,curY)).
+function cicloMesKey(dataStr){
+  var p=dataStr.split('-'),jy=+p[0],jm=+p[1]-1,dd=+p[2];
+  var cfg=db.cfg||{modelo:'cal',diaInicio:1};
+  if(cfg.modelo==='custom'&&cfg.diaInicio>1&&dd>=cfg.diaInicio){jm++;if(jm>11){jm=0;jy++;}}
+  return mesKey(jm,jy);
 }
 
 // Ajusta curM/curY para o ciclo correto ao abrir o app
@@ -2221,12 +2230,12 @@ function mostrarPreviewSync(data){
   var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
   // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
-  var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.tipo==='e')mks[(c.data||'').substring(0,7)]=true;});
+  var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.data)mks[cicloMesKey(c.data)]=true;});
   syncFixosSup=[];
   Object.keys(mks).sort().forEach(function(mk){
-    var p=mk.split('-'),m=parseInt(p[1]),y=parseInt(p[0]);
-    fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
-      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:false});
+    var p=mk.split('-'),m=parseInt(p[1])-1,y=parseInt(p[0]);
+    fixosVigentes(m,y).filter(function(f){return f.tipo==='e'||f.tipo==='r';}).forEach(function(f){
+      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:false});
     });
   });
   renderSyncPreview();
@@ -2279,7 +2288,7 @@ function renderSyncPreview(){
           +'<input type="checkbox" '+(f.checked?'checked':'')+' onchange="toggleSyncFixo('+i+',this.checked)" style="width:16px;height:16px;flex:none">'
           +'<span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
           +'<span style="font-size:10px;color:#7b80a0;flex:none">'+mes+'</span>'
-          +'<span style="font-size:12px;font-weight:700;color:#f87171;flex:none">-'+fmt(f.val)+'</span></label>';
+          +'<span style="font-size:12px;font-weight:700;color:'+(f.tipo==='r'?'#34d399':'#f87171')+';flex:none">'+(f.tipo==='r'?'+':'-')+fmt(f.val)+'</span></label>';
       }).join('')+'</div>';
   }
   syncCands.forEach(function(c,i){c._i=i;});
@@ -2346,7 +2355,7 @@ function confirmarMergeSync(){
   cands.forEach(function(c){
     if(c.target==='lancs'){
       var nl={id:db.nid++,desc:c.desc,val:c.val,data:c.data,cat:c.cat,tipo:c.tipo,sub:'imp',plId:c.plId,contaId:resolveConta(c),csvKey:c.data+'|'+c.desc+'|'+c.val};
-      db.lancs.push(nl);if(c.tipo==='e')novosBank.push(nl);addL++;
+      db.lancs.push(nl);novosBank.push(nl);addL++;
       return;
     }
     var ccId=resolveCard(c);
@@ -2372,13 +2381,13 @@ function confirmarMergeSync(){
   suprimidos.forEach(function(f){
     var best=null,bestDiff=Infinity,bestCat=false;
     novosBank.forEach(function(l){
-      if(usados[l.id])return;var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
+      if(l.tipo!==(f.tipo||'e')||usados[l.id])return;var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
       if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
     });
     var subVal=0;if(best){usados[best.id]=true;best.subGid=f.gid;subVal=best.val;}
     var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
     var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
-    if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
+    if(idx>=0)db.ocorrs[idx]=ov;else db.ocorrs.push(ov);
   });
   // Registros desmarcados → memória de "não importar" (não reaparecem no próximo sync).
   var nIgn=0;
@@ -2574,12 +2583,12 @@ function mostrarPreviewExtrato(dupCount){
   fixosParaSuprimir=[];
   if(importModo!=='fatura'){
     var mksNoImport={};
-    extratoImportBuffer.forEach(function(r){mksNoImport[r.data.substring(0,7)]=true;});
+    extratoImportBuffer.forEach(function(r){mksNoImport[cicloMesKey(r.data)]=true;});
     Object.keys(mksNoImport).sort().forEach(function(mk){
-      var p=mk.split('-');var m=parseInt(p[1]),y=parseInt(p[0]);
-      fixosVigentes(m,y).filter(function(f){return f.tipo==='e';}).forEach(function(f){
-        var jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.deleted;});
-        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,checked:jaSuprimido});
+      var p=mk.split('-');var m=parseInt(p[1])-1,y=parseInt(p[0]);
+      fixosVigentes(m,y).filter(function(f){return f.tipo==='e'||f.tipo==='r';}).forEach(function(f){
+        var jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.mk===mk&&o.deleted;});
+        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:jaSuprimido});
       });
     });
   }
@@ -2620,10 +2629,10 @@ function mostrarPreviewExtrato(dupCount){
       +fixosParaSuprimir.map(function(f,i){
         var p=f.mk.split('-');var mesLabel=MESES[parseInt(p[1])-1]+'/'+p[0];
         return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a">'
-          +'<input type="checkbox" onchange="extratoSetFixoSuprimir('+i+',this.checked)" style="flex-shrink:0;width:16px;height:16px">'
+          +'<input type="checkbox"'+(f.checked?' checked':'')+' onchange="extratoSetFixoSuprimir('+i+',this.checked)" style="flex-shrink:0;width:16px;height:16px">'
           +'<span style="flex:1;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
           +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+mesLabel+'</span>'
-          +'<span style="font-size:12px;font-weight:700;color:#f87171;flex-shrink:0">-'+fmt(f.val)+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:'+(f.tipo==='r'?'#34d399':'#f87171')+';flex-shrink:0">'+(f.tipo==='r'?'+':'-')+fmt(f.val)+'</span>'
           +'</div>';
       }).join('')
       +'</div>';
@@ -2709,11 +2718,11 @@ function confirmarImportExtrato(){
   // Vincula cada fixo suprimido ao débito real importado que o substitui
   // (mesma categoria de preferência, depois menor diferença de valor), para
   // o comprometimento usar max(planejado, real) sem dupla contagem.
-  var candidatos=novos.filter(function(l){return l.tipo==='e';}),usados={};
+  var usados={};
   suprimidos.forEach(function(f){
     var best=null,bestDiff=Infinity,bestCat=false;
-    candidatos.forEach(function(l){
-      if(usados[l.id])return;
+    novos.forEach(function(l){
+      if(l.tipo!==(f.tipo||'e')||usados[l.id])return;
       var catM=l.cat===f.cat,diff=Math.abs(l.val-f.val);
       if((catM&&!bestCat)||(catM===bestCat&&diff<bestDiff)){best=l;bestDiff=diff;bestCat=catM;}
     });
@@ -2721,7 +2730,7 @@ function confirmarImportExtrato(){
     if(best){usados[best.id]=true;best.subGid=f.gid;subVal=best.val;}
     var idx=db.ocorrs.findIndex(function(o){return o.gid===f.gid&&o.mk===f.mk;});
     var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:f.gid,mk:f.mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:subVal};
-    if(idx>=0)db.ocorrs[idx]=ov;else{db.noid++;db.ocorrs.push(ov);}
+    if(idx>=0)db.ocorrs[idx]=ov;else db.ocorrs.push(ov);
   });
   log('extrato_import',{count:itens.length,fixosSup:suprimidos.length,parcReconc:reconc});
   fechar('ov-import-extrato');salvar();

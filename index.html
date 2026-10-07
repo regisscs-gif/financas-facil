@@ -504,7 +504,7 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
     <label style="margin-top:10px">Descrição</label>
     <input id="cof-mov-desc" placeholder="Ex: Depósito 13º salário">
     <label style="margin-top:10px">Data</label>
-    <input id="cof-mov-data" type="date">
+    <input id="cof-mov-data" type="date" onclick="try{this.showPicker()}catch(e){}">
     <button class="sbtn" style="margin-top:14px" onclick="confirmarCofMov()">Salvar</button>
     <button class="cbtn" onclick="fechar('ov-cof-mov')">Cancelar</button>
   </div>
@@ -565,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v125';
+var APP_VERSION = 'v126';
 
 var currentUser = null;
 var accessToken = null;

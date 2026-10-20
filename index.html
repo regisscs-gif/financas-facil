@@ -565,7 +565,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v126';
+var APP_VERSION = 'v127';
 
 var currentUser = null;
 var accessToken = null;
@@ -1895,6 +1895,7 @@ function onBancoConectado(itemData){
   log('pluggy_item',{itemId:itemId,connector:item.connector&&item.connector.name,nome:db.pluggyItemNames[itemId]});
   salvar();
   toast('✓ Banco "'+db.pluggyItemNames[itemId]+'" conectado! Clique em 🔄 Sincronizar.');
+  if((db.pluggyItems||[]).length>1)toast('⚠️ Você tem '+db.pluggyItems.length+' conexões. Se reconectou o mesmo banco, remova as duplicadas em ⚙️ Configurar contas & cartões (botão ✕).');
 }
 var SYNC_URL=SUPA_URL+'/functions/v1/sync-transactions';
 // Adiciona manualmente um itemId (ex.: um item sandbox criado via API para teste).
@@ -1985,10 +1986,26 @@ function renderConfigImport(){
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
         +'<span style="font-size:12px;flex:none">🔗</span>'
         +'<input value="'+escHtml(impCfgConn[id]!=null?impCfgConn[id]:banco)+'" onchange="cfgSetConn(\''+id+'\',this.value)" placeholder="Nome do banco" style="flex:1;min-width:0;'+selSt+';font-weight:700;color:#a5b4fc" title="Nome da conexão (banco)">'
+        +'<button onclick="removerConexaoPluggy(\''+id+'\')" title="Remover esta conexão" style="flex:none;background:rgba(248,113,113,.15);color:#f87171;border:1px solid #3a3f5c;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">✕</button>'
       +'</div>'
       +inner+'</div>';
   }).join('');
   document.getElementById('imp-cfg-content').innerHTML=h||'<div style="color:#7b80a0;font-size:12px">Nenhuma conta encontrada.</div>';
+}
+// Remove uma conexão Pluggy (ex.: item duplicado criado ao reconectar). Mantém os lançamentos
+// já importados; tira só a conexão (não aparece mais no sync nem na config).
+function removerConexaoPluggy(itemId){
+  var nm=(db.pluggyItemNames&&db.pluggyItemNames[itemId])||'esta conexão';
+  confirmar('Remover a conexão "'+nm+'"?\nOs lançamentos já importados são mantidos — só a sincronização desta conexão é removida.',function(){
+    db.pluggyItems=(db.pluggyItems||[]).filter(function(x){return x!==itemId;});
+    if(db.pluggyItemNames)delete db.pluggyItemNames[itemId];
+    if(db.pluggyAccs)Object.keys(db.pluggyAccs).forEach(function(k){if(db.pluggyAccs[k].itemId===itemId)delete db.pluggyAccs[k];});
+    db.contas=(db.contas||[]).filter(function(c){return c.itemId!==itemId;});
+    impCfgBuf=impCfgBuf.filter(function(a){return a.itemId!==itemId;});
+    if(impCfgConn)delete impCfgConn[itemId];
+    log('pluggy_item_rm',{itemId:String(itemId).slice(0,8)});
+    salvar();renderConfigImport();render();toast('Conexão removida.');
+  });
 }
 function cfgFind(id){return impCfgBuf.find(function(a){return a.plAccId===id;});}
 function cfgSetConn(itemId,v){impCfgConn[itemId]=v;}
@@ -2229,6 +2246,16 @@ function mostrarPreviewSync(data){
   if(db.pluggyIgnored)Object.keys(db.pluggyIgnored).forEach(function(p){existing[p]=true;}); // "não importar" memorizados
   var r=buildSyncCandidates(data,existing,existDV);
   syncCands=r.candidates;syncSkipped=r.skipped;
+  // 0 candidatos novos: não abre preview vazio em silêncio — explica o porquê (dados já importados /
+  // conexão sem lançamentos recentes). Distingue "funcionou, nada novo" de "quebrado".
+  if(!syncCands.length){
+    var txs=(data.transactions||[]),ult='';txs.forEach(function(t){if((t.date||'')>ult)ult=t.date;});
+    function _brd(iso){var p=(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:iso;}
+    toast(txs.length
+      ? ('Nenhuma transação nova. A conexão só tem dados até '+_brd(ult)+' (já importados). Se faltam lançamentos recentes, pode ser atraso do Open Finance — tente mais tarde.')
+      : 'Nenhuma transação retornada pela conexão do banco.');
+    return;
+  }
   // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
   var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.data)mks[cicloMesKey(c.data)]=true;});
   syncFixosSup=[];

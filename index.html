@@ -234,6 +234,18 @@ input,select{width:100%;background:#22263a;border:1px solid #2a2f4a;color:#e8eaf
         <label>Dia de início do ciclo</label>
         <input id="cfg-dia" type="number" min="1" max="28" placeholder="Ex: 25">
         <div class="info-box" style="margin-top:8px">💡 Ex: dia 25 → ciclo de Maio = 25/Abr até 24/Mai. O salário recebido no dia 25 já entra no ciclo seguinte.</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:13px">
+          <input id="cfg-util" type="checkbox" style="width:18px;height:18px;flex:none">
+          <span>Antecipar para o dia útil anterior quando cair em fim de semana ou feriado</span>
+        </label>
+        <div style="margin-top:12px;font-size:13px;font-weight:600">Início do ciclo atual</div>
+        <div id="cfg-ciclo-atual" style="font-size:11px;color:#7b80a0;margin:2px 0 6px"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="cfg-ini-ciclo" type="date" onclick="try{this.showPicker()}catch(e){}" style="flex:1">
+          <button class="sbtn" style="width:auto;margin:0;padding:8px 12px" onclick="definirIniCicloAtual()">Definir</button>
+        </div>
+        <div style="font-size:11px;color:#7b80a0;margin-top:4px">Ao conciliar o salário no sync/import, o ciclo passa a começar no dia em que ele caiu. Use aqui para ajustar à mão.</div>
+        <div id="cfg-ancoras" style="margin-top:6px"></div>
       </div>
       <button class="sbtn" onclick="salvarCfg()">Salvar configurações</button>
     </div>
@@ -565,7 +577,7 @@ var SUPA_KEY = 'sb_publishable_6ZhEzVOgrV0zm5xV_yW0Kg_NbNhMZ4s';
 var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 var TABLE='financas';
 
-var APP_VERSION = 'v127';
+var APP_VERSION = 'v128';
 
 var currentUser = null;
 var accessToken = null;
@@ -816,29 +828,57 @@ function mesKey(m,y){return y+'-'+pad(m+1);}
 function avanca(y,m1,d,j){var dt=new Date(y,m1-1+j,d);return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());}
 
 // ── CICLO FINANCEIRO ─────────────────────────────────────
-// Retorna {ini, fim} do ciclo para um dado índice de ciclo (curM, curY)
-// No modelo calendário: ini=1/m/y, fim=último dia/m/y
-// No modelo custom (diaInicio=25): ciclo "Maio" = 25/abr a 24/mai
-function getCiclo(m, y) {
-  var cfg = db.cfg || {modelo:'cal', diaInicio:1};
-  if (cfg.modelo === 'custom' && cfg.diaInicio > 1) {
-    var d = cfg.diaInicio;
-    // ini: dia d do mês anterior
-    var iniDate = new Date(y, m-1, d); // m-1 porque m já é 0-based em JS quando passamos direto
-    // fim: dia d-1 do mês atual
-    var fimDate = new Date(y, m, d-1);
-    return { ini: iniDate, fim: fimDate };
-  } else {
-    var ini2 = new Date(y, m, 1);
-    var fim2 = new Date(y, m+1, 0); // último dia do mês
-    return { ini: ini2, fim: fim2 };
-  }
+// Ciclo custom (diaInicio=25): ciclo "Maio" = 25/abr a 24/mai. O início de cada ciclo é:
+//   1) a âncora gravada em cfg.iniCiclo[mk] (dia em que o salário caiu de fato), senão
+//   2) a regra: dia diaInicio do mês anterior, recuado p/ o dia útil anterior quando cai em
+//      fim de semana/feriado (cfg.anteciparUtil, padrão ligado). Ex.: 25/10/2026 é domingo →
+//      o ciclo de Novembro começa em 23/10 (sexta) e o de Outubro termina em 22/10.
+// O fim de um ciclo é sempre o dia anterior ao início do seguinte (sem buracos/sobreposição).
+var ANCORA_JANELA=7;  // dias em torno do início-regra em que um depósito de salário ancora o ciclo
+var cicloIniTmp=null; // âncoras provisórias (preview de import/sync), só durante o cálculo
+var _cicloCache={},_feriadosCache={};
+function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function addDiasStr(s,n){var d=new Date(s+'T12:00:00');d.setDate(d.getDate()+n);return ymd(d);}
+function difDias(a,b){return Math.round((new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/86400000);}
+function cicloCustom(){var c=db.cfg||{};return c.modelo==='custom'&&c.diaInicio>1;}
+// Feriados nacionais (bancos fechados): fixos + Carnaval (seg/ter), Sexta-feira Santa e Corpus Christi.
+function feriadosBR(y){
+  if(_feriadosCache[y])return _feriadosCache[y];
+  var a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),
+      h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),
+      mes=Math.floor((h+l-7*m+114)/31),dia=((h+l-7*m+114)%31)+1;
+  var pascoa=y+'-'+pad(mes)+'-'+pad(dia),set={};
+  ['01-01','04-21','05-01','09-07','10-12','11-02','11-15','12-25'].forEach(function(x){set[y+'-'+x]=true;});
+  if(y>=2024)set[y+'-11-20']=true; // Consciência Negra (Lei 14.759/2023)
+  [-48,-47,-2,60].forEach(function(n){set[addDiasStr(pascoa,n)]=true;});
+  return(_feriadosCache[y]=set);
 }
+function ehDiaUtil(s){var w=new Date(s+'T12:00:00').getDay();return w!==0&&w!==6&&!feriadosBR(+s.slice(0,4))[s];}
+// Início do ciclo (m,y) pela regra, sem âncora.
+function cicloIniRegra(m,y){
+  var s=ymd(new Date(y,m-1,db.cfg.diaInicio,12));
+  if(db.cfg.anteciparUtil!==false){for(var g=0;g<10&&!ehDiaUtil(s);g++)s=addDiasStr(s,-1);}
+  return s;
+}
+function cicloIniAncora(mk){
+  if(cicloIniTmp&&cicloIniTmp[mk])return cicloIniTmp[mk];
+  return((db.cfg&&db.cfg.iniCiclo)||{})[mk]||null;
+}
+function cicloIni(m,y){return cicloIniAncora(mesKey(m,y))||cicloIniRegra(m,y);}
+// {ini,fim} do ciclo (m,y) como strings YYYY-MM-DD (m 0-based; aceita -1/12, normaliza).
+function getCicloStr(m,y){
+  var n=new Date(y,m,1);m=n.getMonth();y=n.getFullYear();
+  if(!cicloCustom())return{ini:y+'-'+pad(m+1)+'-01',fim:ymd(new Date(y,m+1,0,12))};
+  var nm=m+1,ny=y;if(nm>11){nm=0;ny++;}
+  var mk=mesKey(m,y),mk2=mesKey(nm,ny),cfg=db.cfg;
+  var k=mk+'|'+cfg.diaInicio+'|'+(cfg.anteciparUtil===false?0:1)+'|'+(cicloIniAncora(mk)||'')+'|'+(cicloIniAncora(mk2)||'');
+  return _cicloCache[k]||(_cicloCache[k]={ini:cicloIni(m,y),fim:addDiasStr(cicloIni(nm,ny),-1)});
+}
+function getCiclo(m,y){var c=getCicloStr(m,y);return{ini:new Date(c.ini+'T12:00:00'),fim:new Date(c.fim+'T12:00:00')};}
 
 // Label do ciclo atual
 function getCicloLabel(m, y) {
-  var cfg = db.cfg || {modelo:'cal', diaInicio:1};
-  if (cfg.modelo === 'custom' && cfg.diaInicio > 1) {
+  if (cicloCustom()) {
     var c = getCiclo(m, y);
     var ini = c.ini, fim = c.fim;
     return pad(ini.getDate())+' '+MABR[ini.getMonth()]+' – '+pad(fim.getDate())+' '+MABR[fim.getMonth()]+' '+fim.getFullYear();
@@ -847,29 +887,72 @@ function getCicloLabel(m, y) {
 }
 
 // Verifica se uma data (string yyyy-mm-dd) pertence ao ciclo m/y
+// Comparação por string YYYY-MM-DD evita problemas de fuso e inclui corretamente o último dia
 function pertenceCiclo(dataStr, m, y) {
-  var c = getCiclo(m, y);
-  // Comparação por string YYYY-MM-DD evita problemas de fuso e inclui corretamente o último dia
-  var iniStr = c.ini.getFullYear()+'-'+pad(c.ini.getMonth()+1)+'-'+pad(c.ini.getDate());
-  var fimStr = c.fim.getFullYear()+'-'+pad(c.fim.getMonth()+1)+'-'+pad(c.fim.getDate());
-  return dataStr >= iniStr && dataStr <= fimStr;
+  var c = getCicloStr(m, y);
+  return dataStr >= c.ini && dataStr <= c.fim;
 }
 // mesKey do CICLO a que uma data pertence (não o mês-calendário cru). Ex.: no ciclo custom
 // dia 25, um débito de 25/09 pertence ao ciclo de Outubro → "2026-10". Usado na supressão de
 // fixos, que deve casar com o mês em que o fixo é exibido (fixosVigentes(curM,curY)).
+// Deriva de pertenceCiclo (fonte única: respeita dia útil e âncoras).
 function cicloMesKey(dataStr){
-  var p=dataStr.split('-'),jy=+p[0],jm=+p[1]-1,dd=+p[2];
-  var cfg=db.cfg||{modelo:'cal',diaInicio:1};
-  if(cfg.modelo==='custom'&&cfg.diaInicio>1&&dd>=cfg.diaInicio){jm++;if(jm>11){jm=0;jy++;}}
-  return mesKey(jm,jy);
+  var p=dataStr.split('-'),y=+p[0],m=+p[1]-1;
+  for(var j=0;j<=2;j++){var d=new Date(y,m+j,1);if(pertenceCiclo(dataStr,d.getMonth(),d.getFullYear()))return mesKey(d.getMonth(),d.getFullYear());}
+  return mesKey(m,y);
 }
 
 // Ajusta curM/curY para o ciclo correto ao abrir o app
 function ajustarCicloInicial() {
-  var td=hoje();
-  var nm=curM+1,ny=curY;
-  if(nm>11){nm=0;ny++;}
-  if(pertenceCiclo(td,nm,ny)){curM=nm;curY=ny;}
+  var p=cicloMesKey(hoje()).split('-');
+  curY=+p[0];curM=+p[1]-1;
+}
+
+// Âncora no salário real: depósito de receita (80–125% do maior fixo de receita do ciclo)
+// até ANCORA_JANELA dias antes/depois do início-regra de um ciclo → sugere iniciar o ciclo
+// no dia do depósito. itens: [{data,val,tipo,desc}]. Uma sugestão por ciclo (valor mais próximo).
+function sugerirAncorasCiclo(itens){
+  if(!cicloCustom())return[];
+  var best={};
+  itens.forEach(function(r){
+    if(r.tipo!=='r'||!r.data)return;
+    var p=r.data.split('-');
+    for(var j=0;j<=2;j++){
+      var d=new Date(+p[0],+p[1]-1+j,1),m=d.getMonth(),y=d.getFullYear(),mk=mesKey(m,y);
+      var regra=cicloIniRegra(m,y),dif=difDias(r.data,regra);
+      if(Math.abs(dif)>ANCORA_JANELA)continue;
+      var fx=null;db.fixos.forEach(function(f){if(f.tipo==='r'&&f.ini<=mk&&(f.fim===null||f.fim>mk)&&(!fx||f.val>fx.val))fx=f;});
+      if(!fx||r.val<fx.val*0.8||r.val>fx.val*1.25)continue;
+      if(r.data===((db.cfg.iniCiclo||{})[mk]||regra))continue; // já começa nesse dia
+      var dv=Math.abs(r.val-fx.val);
+      if(!best[mk]||dv<best[mk]._dv)best[mk]={mk:mk,data:r.data,regra:regra,desc:r.desc,val:r.val,checked:true,_dv:dv};
+    }
+  });
+  return Object.keys(best).sort().map(function(k){return best[k];});
+}
+// Executa fn com as âncoras marcadas aplicadas provisoriamente (preview).
+function comAncoras(sug,fn){
+  var prev=cicloIniTmp;cicloIniTmp={};
+  (sug||[]).forEach(function(a){if(a.checked)cicloIniTmp[a.mk]=a.data;});
+  try{return fn();}finally{cicloIniTmp=prev;}
+}
+function gravarAncoras(sug){
+  var n=0;(sug||[]).forEach(function(a){if(!a.checked)return;db.cfg.iniCiclo=db.cfg.iniCiclo||{};db.cfg.iniCiclo[a.mk]=a.data;n++;});
+  if(n)log('ciclo_ancora',{ancoras:(sug||[]).filter(function(a){return a.checked;}).map(function(a){return a.mk+'='+a.data;})});
+  return n;
+}
+function brData(s){var p=(s||'').split('-');return p.length===3?p[2]+'/'+p[1]:s;}
+// Bloco do preview com as sugestões de âncora (checkbox → onToggle(i,checked)).
+function ancorasHTML(sug,onToggle){
+  if(!sug||!sug.length)return'';
+  return '<div style="background:#0f2a22;border:1px solid #1f5c48;border-radius:8px;padding:10px;margin-bottom:8px">'
+    +'<div style="font-size:11px;font-weight:600;color:#34d399;margin-bottom:6px">📅 Salário fora do dia de corte — iniciar o ciclo no dia em que ele caiu</div>'
+    +sug.map(function(a,i){var p=a.mk.split('-');
+      return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:12px">'
+        +'<input type="checkbox"'+(a.checked?' checked':'')+' onchange="'+onToggle+'('+i+',this.checked)" style="width:16px;height:16px;flex:none">'
+        +'<span style="flex:1;min-width:0">Ciclo de <b>'+MESES[+p[1]-1]+'/'+p[0]+'</b> começa em <b>'+brData(a.data)+'</b> <span style="color:#7b80a0">(regra: '+brData(a.regra)+')</span></span>'
+        +'<span style="font-size:12px;font-weight:700;color:#34d399;flex:none">+'+fmt(a.val)+'</span></label>';
+    }).join('')+'</div>';
 }
 
 // Navegar ciclos
@@ -891,15 +974,48 @@ function salvarCfg() {
   var modelo = document.getElementById('cfg-modelo').value;
   var dia = parseInt(document.getElementById('cfg-dia').value) || 1;
   if (modelo === 'custom' && (dia < 2 || dia > 28)) { toast('Informe um dia entre 2 e 28'); return; }
-  db.cfg = { modelo: modelo, diaInicio: dia };
-  log('cfg_save',{modelo:modelo,diaInicio:dia});
+  var ant = db.cfg || {}, util = document.getElementById('cfg-util').checked;
+  db.cfg = Object.assign({}, ant, { modelo: modelo, diaInicio: dia, anteciparUtil: util });
+  // âncoras foram gravadas p/ o corte antigo — trocar modelo/dia as invalida
+  if (ant.modelo !== modelo || ant.diaInicio !== dia) delete db.cfg.iniCiclo;
+  log('cfg_save',{modelo:modelo,diaInicio:dia,anteciparUtil:util});
   syncFaturas(); salvar(); toast('✓ Configurações salvas!'); render();
+}
+// Início do ciclo exibido (curM/curY): mostra o período e as âncoras gravadas.
+function renderCfgCiclo(){
+  var el=document.getElementById('cfg-ciclo-atual');if(!el)return;
+  if(!cicloCustom()){el.textContent='';document.getElementById('cfg-ancoras').innerHTML='';return;}
+  var c=getCicloStr(curM,curY),anc=cicloIniAncora(mesKey(curM,curY));
+  el.textContent=MESES[curM]+'/'+curY+': '+brData(c.ini)+' a '+brData(c.fim)+(anc?' (ajustado; regra '+brData(cicloIniRegra(curM,curY))+')':' (pela regra)');
+  document.getElementById('cfg-ini-ciclo').value=c.ini;
+  var ic=db.cfg.iniCiclo||{},ks=Object.keys(ic).sort().reverse();
+  document.getElementById('cfg-ancoras').innerHTML=ks.map(function(mk){var p=mk.split('-');
+    return '<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0"><span style="flex:1">'+MESES[+p[1]-1]+'/'+p[0]+' começa em '+brData(ic[mk])+'</span>'
+      +'<button onclick="removerIniCiclo(\''+mk+'\')" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px" title="Voltar à regra">✕</button></div>';
+  }).join('');
+}
+function definirIniCicloAtual(){
+  if(!cicloCustom()){toast('Disponível só no ciclo personalizado');return;}
+  var v=document.getElementById('cfg-ini-ciclo').value;if(!v){toast('Informe a data');return;}
+  var mk=mesKey(curM,curY),regra=cicloIniRegra(curM,curY);
+  if(Math.abs(difDias(v,regra))>10){toast('Use uma data até 10 dias da regra ('+brData(regra)+')');return;}
+  db.cfg.iniCiclo=db.cfg.iniCiclo||{};
+  if(v===regra)delete db.cfg.iniCiclo[mk];else db.cfg.iniCiclo[mk]=v;
+  log('ciclo_ancora_manual',{mk:mk,data:v});
+  syncFaturas();salvar();render();renderCfgCiclo();toast('✓ Início do ciclo ajustado');
+}
+function removerIniCiclo(mk){
+  if(db.cfg.iniCiclo)delete db.cfg.iniCiclo[mk];
+  log('ciclo_ancora_rm',{mk:mk});
+  syncFaturas();salvar();render();renderCfgCiclo();
 }
 function renderCfg() {
   var cfg = db.cfg || {modelo:'cal', diaInicio:1};
   document.getElementById('cfg-modelo').value = cfg.modelo;
   document.getElementById('cfg-dia-wrap').style.display = cfg.modelo === 'custom' ? 'block' : 'none';
   document.getElementById('cfg-dia').value = cfg.diaInicio > 1 ? cfg.diaInicio : '';
+  document.getElementById('cfg-util').checked = cfg.anteciparUtil !== false;
+  renderCfgCiclo();
   var sb=document.getElementById('sync-buffer');
   if(sb)sb.value=syncBufferDias();
   var sf=document.getElementById('sync-from');
@@ -1617,6 +1733,47 @@ function reprocessarParcelasFaturaCSV(){
 // (ex.: fatura parcial "Mercado*mercadolivre" + fatura final "MERCADO*MERCADOLIVRE").
 // Mantém o primeiro de cada identidade normalizada. Parcelas usam ccParcKey (sem data);
 // demais usam ccDKey (data+desc norm+valor).
+// v128: o ciclo custom passou a recuar o início p/ o dia útil anterior (fim de semana/feriado).
+// Lançamentos dos dias de fronteira (ex.: salário de 23/10/2026, com 25/10 num domingo) mudaram
+// de ciclo; acerta as supressões de fixo que os acompanham. Idempotente via db.migCicloUtil1.
+//  a) lanç vinculado (subGid) cuja supressão ficou no ciclo antigo → move a supressão p/ o novo
+//     ciclo; se o antigo tiver outro débito real sem vínculo que case com o fixo, vincula-o.
+//  b) lanç importado sem vínculo que entrou num ciclo onde o fixo ainda está planejado → suprime
+//     e vincula (receita: 80–125% do valor; despesa: mesma categoria e até 10%).
+function migrarCicloDiaUtil(){
+  var res={movidas:0,vinculadas:0,det:[]};
+  if(!cicloCustom())return res;
+  var dI=db.cfg.diaInicio;
+  function mkAntigo(s){var p=s.split('-'),y=+p[0],m=+p[1]-1;if(+p[2]>=dI){m++;if(m>11){m=0;y++;}}return mesKey(m,y);}
+  function casa(l,f){return l.tipo===f.tipo&&(f.tipo==='r'?(l.val>=f.val*0.8&&l.val<=f.val*1.25):(l.cat===f.cat&&Math.abs(l.val-f.val)<=Math.max(1,f.val*0.1)));}
+  function suprimir(gid,mk,l){
+    var idx=db.ocorrs.findIndex(function(o){return o.gid===gid&&o.mk===mk;});
+    var ov={id:idx>=0?db.ocorrs[idx].id:db.noid++,gid:gid,mk:mk,desc:'',val:0,dia:0,cat:'',tipo:'',deleted:true,sub:true,subVal:l.val};
+    if(idx>=0)db.ocorrs[idx]=ov;else db.ocorrs.push(ov);
+    l.subGid=gid;res.vinculadas++;res.det.push('vinc '+l.data+' '+l.desc+' '+l.val+' → fixo '+gid+' '+mk);
+  }
+  function melhorFixo(mk,l){
+    var p=mk.split('-'),best=null;
+    fixosVigentes(+p[1]-1,+p[0]).forEach(function(f){if(casa(l,f)&&(!best||Math.abs(l.val-f.val)<Math.abs(l.val-best.val)))best=f;});
+    return best;
+  }
+  db.lancs.forEach(function(l){
+    if(l.sub==='fat'||!l.data)return;
+    var de=mkAntigo(l.data),para=cicloMesKey(l.data);if(de===para)return;
+    if(l.subGid){
+      var o=db.ocorrs.find(function(x){return x.gid===l.subGid&&x.mk===de&&x.deleted&&x.sub;});
+      if(!o||db.ocorrs.some(function(x){return x.gid===l.subGid&&x.mk===para&&x.deleted;}))return;
+      o.mk=para;res.movidas++;res.det.push('move fixo '+l.subGid+' '+de+'→'+para+' ('+l.data+' '+l.desc+')');
+      var pd=de.split('-'),f=fixosVigentes(+pd[1]-1,+pd[0]).find(function(x){return x.gid===l.subGid;});if(!f)return;
+      var alt=db.lancs.find(function(x){return x!==l&&x.sub==='imp'&&!x.subGid&&x.data&&cicloMesKey(x.data)===de&&casa(x,f);});
+      if(alt)suprimir(f.gid,de,alt);
+    }else if(l.sub==='imp'){
+      var f2=melhorFixo(para,l);if(f2)suprimir(f2.gid,para,l);
+    }
+  });
+  if(res.movidas||res.vinculadas)log('mig_ciclo_util',{movidas:res.movidas,vinculadas:res.vinculadas,det:res.det});
+  return res;
+}
 function dedupCCLancsCase(){
   var seen={},keep=[],removed=0;
   db.ccLancs.forEach(function(l){
@@ -1666,7 +1823,7 @@ function reconciliarParcelasExistentes(){
 
 // ── IMPORT EXTRATO ───────────────────────────────────────
 var extratoImportBuffer=[];
-var fixosParaSuprimir=[];
+var fixosParaSuprimir=[],extratoAncoras=[];
 var importModo='extrato'; // 'extrato' | 'fatura'
 var fatCCId=null;
 var pdfFaturaFile=null;
@@ -2162,7 +2319,7 @@ async function sincronizarBanco(){
   }
 }
 // ── Mapeamento Pluggy → modelo do app (validado em pluggy/merge-test.js) ──
-var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={},syncFixosSup=[];
+var syncData=null,syncCands=[],syncSkipped=0,syncCardMap={},syncFixosSup=[],syncAncoras=[];
 function mapCatPluggy(plCat,desc,tipo){
   var c=(plCat||'').toLowerCase();
   if(tipo==='r'){
@@ -2256,18 +2413,26 @@ function mostrarPreviewSync(data){
       : 'Nenhuma transação retornada pela conexão do banco.');
     return;
   }
-  // Sugestão de fixos a suprimir: fixos (despesa) vigentes nos meses que vieram da conta corrente.
-  var mks={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.data)mks[cicloMesKey(c.data)]=true;});
+  // Salário caído fora do dia de corte → sugere ancorar o ciclo nessa data (afeta os fixos sugeridos).
+  syncAncoras=sugerirAncorasCiclo(syncCands.filter(function(c){return c.target==='lancs';}));
+  syncFixosSup=[];montarSyncFixosSup();
+  renderSyncPreview();
+  document.getElementById('ov-sync').classList.add('on');
+}
+// Sugestão de fixos a suprimir: fixos vigentes nos ciclos que vieram da conta corrente
+// (calculados com as âncoras marcadas). Preserva as marcações já feitas por gid+mês.
+function montarSyncFixosSup(){
+  var prev={};syncFixosSup.forEach(function(f){prev[f.gid+'|'+f.mk]=f.checked;});
+  var mks=comAncoras(syncAncoras,function(){var o={};syncCands.forEach(function(c){if(c.target==='lancs'&&c.data)o[cicloMesKey(c.data)]=true;});return o;});
   syncFixosSup=[];
   Object.keys(mks).sort().forEach(function(mk){
     var p=mk.split('-'),m=parseInt(p[1])-1,y=parseInt(p[0]);
     fixosVigentes(m,y).filter(function(f){return f.tipo==='e'||f.tipo==='r';}).forEach(function(f){
-      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:false});
+      syncFixosSup.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:!!prev[f.gid+'|'+mk]});
     });
   });
-  renderSyncPreview();
-  document.getElementById('ov-sync').classList.add('on');
 }
+function toggleSyncAncora(i,c){if(!syncAncoras[i])return;syncAncoras[i].checked=c;montarSyncFixosSup();renderSyncPreview();}
 function toggleSyncFixo(i,c){if(syncFixosSup[i])syncFixosSup[i].checked=c;}
 function setSyncCardMap(accId,v){syncCardMap[accId]=(v==='new')?'new':(+v);renderSyncPreview();}
 function toggleSyncCand(i){if(!syncCands[i])return;syncCands[i].checked=!syncCands[i].checked;var b=document.getElementById('sync-merge-btn');if(b){var n=syncCands.filter(function(x){return x.checked;}).length;b.textContent=syncMergeLabel(n,syncCands.length-n);b.disabled=!syncCands.length;}}
@@ -2307,6 +2472,7 @@ function renderSyncPreview(){
       h+='<div style="font-size:12px;color:#f87171;background:rgba(248,113,113,.1);border-radius:8px;padding:8px;margin-bottom:8px">⚠️ Item não encontrado. Use 🧹 Limpar conexões e reconecte com "Pluggy Bank".</div>';
   }
   h+='<div style="font-size:12px;color:#7b80a0;margin-bottom:8px">'+data.counts.accounts+' conta(s) · '+data.counts.transactions+' transação(ões) · '+syncSkipped+' já no app (ignoradas)</div>';
+  h+=ancorasHTML(syncAncoras,'toggleSyncAncora');
   if(syncFixosSup.length){
     h+='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:8px">'
       +'<div style="font-size:11px;font-weight:600;color:#fbbf24;margin-bottom:8px">⚠️ Fixos do período — marque os que já vieram do banco para não duplicar</div>'
@@ -2403,6 +2569,7 @@ function confirmarMergeSync(){
     db.ccLancs.push({id:db.nid++,ccId:ccId,desc:c.desc,val:c.val,data:c.data,cat:c.cat,titular:c.titular||'eu',
       sub:'av',plId:c.plId,csvKey:c.data+'|'+c.desc+'|'+c.val});addC++;
   });
+  var nAnc=gravarAncoras(syncAncoras);syncAncoras=[];
   // Suprime fixos marcados (já vieram do banco), vinculando ao débito real p/ o comprometimento.
   var suprimidos=syncFixosSup.filter(function(f){return f.checked;}),usados={};
   suprimidos.forEach(function(f){
@@ -2426,7 +2593,7 @@ function confirmarMergeSync(){
   db.pluggyLastSync=new Date().toISOString().slice(0,10);
   var sfm=document.getElementById('sync-from');if(sfm)sfm.value=syncFromDefault();
   atualizarSyncHint();
-  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn});
+  log('pluggy_merge',{lancs:addL,cc:addC,fixosSup:suprimidos.length,ignorados:nIgn,ancoras:nAnc});
   syncFaturas();salvar();render();
   fechar('ov-sync');
   var msg='✓ '+(addL+addC)+' importado(s)';
@@ -2603,21 +2770,47 @@ function atualizarBtnExtrato(){
   btn.textContent=n>0?'Importar '+n+' lançamento'+(n!==1?'s':''):'Nenhum selecionado';
   btn.disabled=n===0;
 }
+// Fixos vigentes nos ciclos do extrato (com as âncoras marcadas). Preserva marcações por gid+mês.
+function montarFixosParaSuprimir(){
+  var prev={};fixosParaSuprimir.forEach(function(f){prev[f.gid+'|'+f.mk]=f.checked;});
+  var mksNoImport=comAncoras(extratoAncoras,function(){var o={};extratoImportBuffer.forEach(function(r){o[cicloMesKey(r.data)]=true;});return o;});
+  fixosParaSuprimir=[];
+  Object.keys(mksNoImport).sort().forEach(function(mk){
+    var p=mk.split('-');var m=parseInt(p[1])-1,y=parseInt(p[0]);
+    fixosVigentes(m,y).filter(function(f){return f.tipo==='e'||f.tipo==='r';}).forEach(function(f){
+      var k=f.gid+'|'+mk,jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.mk===mk&&o.deleted;});
+      fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:(k in prev)?prev[k]:jaSuprimido});
+    });
+  });
+}
+function extratoSetAncora(i,c){if(!extratoAncoras[i])return;extratoAncoras[i].checked=c;montarFixosParaSuprimir();renderExtFixos();}
+// Seção de fixos para suprimir (só no modo extrato), precedida das sugestões de âncora do ciclo
+function renderExtFixos(){
+  var hf=ancorasHTML(extratoAncoras,'extratoSetAncora');
+  if(fixosParaSuprimir.length){
+    hf+='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:4px">'
+      +'<div style="font-size:11px;font-weight:600;color:#fbbf24;margin-bottom:8px">⚠️ Fixos do período — marque os que já estão no extrato para não duplicar</div>'
+      +fixosParaSuprimir.map(function(f,i){
+        var p=f.mk.split('-');var mesLabel=MESES[parseInt(p[1])-1]+'/'+p[0];
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a">'
+          +'<input type="checkbox"'+(f.checked?' checked':'')+' onchange="extratoSetFixoSuprimir('+i+',this.checked)" style="flex-shrink:0;width:16px;height:16px">'
+          +'<span style="flex:1;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
+          +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+mesLabel+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:'+(f.tipo==='r'?'#34d399':'#f87171')+';flex-shrink:0">'+(f.tipo==='r'?'+':'-')+fmt(f.val)+'</span>'
+          +'</div>';
+      }).join('')
+      +'</div>';
+  }
+  document.getElementById('ext-fixos').innerHTML=hf;
+}
 function mostrarPreviewExtrato(dupCount){
   document.querySelector('#ov-import-extrato h3').textContent=importModo==='fatura'?'Importar fatura PDF':'Importar extrato';
 
   // Fixos: só relevante no modo extrato (conta corrente)
-  fixosParaSuprimir=[];
+  fixosParaSuprimir=[];extratoAncoras=[];
   if(importModo!=='fatura'){
-    var mksNoImport={};
-    extratoImportBuffer.forEach(function(r){mksNoImport[cicloMesKey(r.data)]=true;});
-    Object.keys(mksNoImport).sort().forEach(function(mk){
-      var p=mk.split('-');var m=parseInt(p[1])-1,y=parseInt(p[0]);
-      fixosVigentes(m,y).filter(function(f){return f.tipo==='e'||f.tipo==='r';}).forEach(function(f){
-        var jaSuprimido=db.ocorrs.some(function(o){return o.gid===f.gid&&o.mk===mk&&o.deleted;});
-        fixosParaSuprimir.push({gid:f.gid,mk:mk,desc:f.desc,val:f.val,cat:f.cat,tipo:f.tipo,checked:jaSuprimido});
-      });
-    });
+    extratoAncoras=sugerirAncorasCiclo(extratoImportBuffer);
+    montarFixosParaSuprimir();
   }
 
   // Casamento automático com parcelas avulsas pendentes (só modo extrato).
@@ -2648,23 +2841,7 @@ function mostrarPreviewExtrato(dupCount){
     +(softCount?'<div style="margin-top:6px;font-size:11px;color:#fbbf24">⚠️ '+softCount+' possív'+(softCount!==1?'eis':'el')+' duplicata'+(softCount!==1?'s':'')+' — verifique abaixo (pré-desmarcado'+(softCount!==1?'s':'')+')</div>':'')
     +titGlobal;
 
-  // Seção de fixos para suprimir (só no modo extrato)
-  var hf='';
-  if(fixosParaSuprimir.length){
-    hf='<div style="background:#2a1f0a;border:1px solid #5c4a00;border-radius:8px;padding:10px;margin-bottom:4px">'
-      +'<div style="font-size:11px;font-weight:600;color:#fbbf24;margin-bottom:8px">⚠️ Fixos do período — marque os que já estão no extrato para não duplicar</div>'
-      +fixosParaSuprimir.map(function(f,i){
-        var p=f.mk.split('-');var mesLabel=MESES[parseInt(p[1])-1]+'/'+p[0];
-        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #3a2f0a">'
-          +'<input type="checkbox"'+(f.checked?' checked':'')+' onchange="extratoSetFixoSuprimir('+i+',this.checked)" style="flex-shrink:0;width:16px;height:16px">'
-          +'<span style="flex:1;font-size:12px;color:#e8eaf6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(f.desc)+'</span>'
-          +'<span style="font-size:10px;color:#7b80a0;flex-shrink:0">'+mesLabel+'</span>'
-          +'<span style="font-size:12px;font-weight:700;color:'+(f.tipo==='r'?'#34d399':'#f87171')+';flex-shrink:0">'+(f.tipo==='r'?'+':'-')+fmt(f.val)+'</span>'
-          +'</div>';
-      }).join('')
-      +'</div>';
-  }
-  document.getElementById('ext-fixos').innerHTML=hf;
+  renderExtFixos();
 
   // Lista de lançamentos com dropdown de categoria
   if(n===0){
@@ -2741,6 +2918,7 @@ function confirmarImportExtrato(){
     db.lancs.push(nl);novos.push(nl);
   });
   db.lancs.sort(function(a,b){return b.data.localeCompare(a.data);});
+  gravarAncoras(extratoAncoras);extratoAncoras=[];
   var suprimidos=fixosParaSuprimir.filter(function(f){return f.checked;});
   // Vincula cada fixo suprimido ao débito real importado que o substitui
   // (mesma categoria de preferência, depois menor diferença de valor), para
@@ -3957,6 +4135,8 @@ async function init(){
     db.migReconcParc2=1;
     var _dd=(!db.migDedupCase)?dedupCCLancsCase():null;
     db.migDedupCase=1;
+    var _mc=(!db.migCicloUtil1)?migrarCicloDiaUtil():null;
+    db.migCicloUtil1=1;
     ajustarCicloInicial();
     syncFaturas();
     salvar();
@@ -3964,6 +4144,7 @@ async function init(){
     if(_rp&&_rp.criados)setTimeout(function(){toast('✓ Reprocessamento: '+_rp.criados+' parcela'+(_rp.criados!==1?'s':'')+' futura'+(_rp.criados!==1?'s':'')+' criada'+(_rp.criados!==1?'s':'')+'.');},900);
     if(_rc&&(_rc.reconc||_rc.recriadas))setTimeout(function(){toast('✓ Parcelas reconciliadas: '+(_rc.reconc+_rc.recriadas)+' pagamento'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+' vinculado'+((_rc.reconc+_rc.recriadas)!==1?'s':'')+'.');},1400);
     if(_dd&&_dd.removidos)setTimeout(function(){toast('✓ '+_dd.removidos+' lançamento'+(_dd.removidos!==1?'s':'')+' de cartão duplicado'+(_dd.removidos!==1?'s':'')+' removido'+(_dd.removidos!==1?'s':'')+'.');},1900);
+    if(_mc&&(_mc.movidas||_mc.vinculadas))setTimeout(function(){toast('✓ Ciclo ajustado ao dia útil: '+(_mc.movidas+_mc.vinculadas)+' fixo'+((_mc.movidas+_mc.vinculadas)!==1?'s':'')+' reconciliado'+((_mc.movidas+_mc.vinculadas)!==1?'s':'')+'.');},2400);
     var resizeTimer;
     window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(balanceDash,150);});
   } else {
